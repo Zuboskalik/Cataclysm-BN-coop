@@ -395,3 +395,128 @@ C:\games\Cataclysm-BN-coop-fork\src\damage.cpp(63,1): warning C4715: damage_unit
   enchantment_vision.cpp
   enum_conversions.cpp
   event.cpp
+  event_bus.cpp
+  event_field_transformations.cpp
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244: инициализация: преобразование "const double" в "_Ty2", возможна потеря данных [C:\games\Cataclysm-BN-coop-fork\out\build\windows-tiles-sounds-x64-msvc\src\cataclysm-bn-tiles-common.vcxproj]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:         with [C:\games\Cataclysm-BN-coop-fork\out\build\windows-tiles-sounds-x64-msvc\src\cataclysm-bn-tiles-common.vcxproj]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:         [ [C:\games\Cataclysm-BN-coop-fork\out\build\windows-tiles-sounds-x64-msvc\src\cataclysm-bn-tiles-common.vcxproj]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:             _Ty2=int [C:\games\Cataclysm-BN-coop-fork\out\build\windows-tiles-sounds-x64-msvc\src\cataclysm-bn-tiles-common.vcxproj]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:         ] [C:\games\Cataclysm-BN-coop-fork\out\build\windows-tiles-sounds-x64-msvc\src\cataclysm-bn-tiles-common.vcxproj]
+  (компиляция исходного файла "../../../../src/enchantments/enchantment.cpp")
+      C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\utility(274,54):
+      контекст создания экземпляра шаблона (сначала самый старый)
+          C:\games\Cataclysm-BN-coop-fork\src\enchantments\enchantment.cpp(296,40):
+          выполняется компиляция ссылки на экземпляр шаблон функции "std::pair<std::_Tree_iterator<std::_Tree_val<std::_Tree_simple_types<std::pair<const enchantment_value_id,int>>>>,bool> std::_Tree<std::_Tmap_traits<_Kty,_Ty,_Pr,_Alloc,false>>::emplace<enchantment_value_id&,const double&>(enchantment_value_id &,const double &)"
+          with
+          [
+              _Kty=enchantment_value_id,
+              _Ty=int,
+              _Pr=std::less<enchantment_value_id>,
+              _Alloc=std::allocator<std::pair<const enchantment_value_id,int>>
+          ]
+              C:\games\Cataclysm-BN-coop-fork\src\enchantments\enchantment.cpp(296,47):
+              см. первую ссылку на "std::_Tree<std::_Tmap_traits<_Kty,_Ty,_Pr,_Alloc,false>>::emplace" в "enchantment::load"
+          with
+          [
+              _Kty=enchantment_value_id,
+              _Ty=int,
+              _Pr=std::less<enchantment_value_id>,
+              _Alloc=std::allocator<std::pair<const enchantment_value_id,int>>
+          ]
+          C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xtree(1048,30):
+          выполняется компиляция ссылки на экземпляр шаблон функции "std::pair<std::_Tree_node<std::pair<const enchantment_value_id,int>,std::_Default_allocator_traits<_Alloc>::void_pointer> *,bool> std::_Tree<std::_Tmap_traits<_Kty,_Ty,_Pr,_Alloc,false>>::_Emplace<enchantment_value_id&,const double&>(enchantment_value_id &,const double &)"
+          with
+          [
+              _Alloc=std::allocator<std::pair<const enchantment_value_id,int>>,
+              _Kty=enchantment_value_id,
+              _Ty=int,
+              _Pr=std::less<enchantment_value_id>
+          ]
+          C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xtree(1023,49):
+          выполняется компиляция ссылки на экземпляр шаблон функции "std::_Tree_temp_node<std::allocator<std::_Tree_node<std::pair<const enchantment_value_id,int>,std::_Default_allocator_traits<_Alloc>::void_pointer>>>::_Tree_temp_node<enchantment_value_id&,const double&>(_Alnode &,std::_Tree_node<std::pair<const enchantment_value_id,int>,std::_Default_allocator_traits<_Alloc>::void_pointer> *,enchantment_value_id &,const double &)"
+          with
+          [
+              _Alloc=std::allocator<std::pair<const enchantment_value_id,int>>,
+              _Alnode=std::allocator<std::_Tree_node<std::pair<const enchantment_value_id,int>,std::_Default_allocator_traits<std::allocator<std::pair<const enchantment_value_id,int>>>::void_pointer>>
+          ]
+          C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xtree(830,25):
+          выполняется компиляция ссылки на экземпляр шаблон функции "void std::_Default_allocator_traits<_Alloc>::construct<_Ty,enchantment_value_id&,const double&>(_Alloc &,_Objty *const ,enchantment_value_id &,const double &)"
+          with
+          [
+              _Alloc=std::allocator<std::_Tree_node<std::pair<const enchantment_value_id,int>,std::_Default_allocator_traits<std::allocator<std::pair<const enchantment_value_id,int>>>::void_pointer>>,
+              _Ty=std::pair<const enchantment_value_id,int>,
+              _Objty=std::pair<const enchantment_value_id,int>
+          ]
+          C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xmemory(730,14):
+          выполняется компиляция ссылки на экземпляр шаблон функции "_Ty *std::construct_at<_Objty,enchantment_value_id&,const double&>(_Ty *const ,enchantment_value_id &,const double &) noexcept"
+          with
+          [
+              _Ty=std::pair<const enchantment_value_id,int>,
+              _Objty=std::pair<const enchantment_value_id,int>
+          ]
+          C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\xutility(463,69):
+          выполняется компиляция ссылки на экземпляр шаблон функции "std::pair<const enchantment_value_id,int>::pair<enchantment_value_id&,const double&,0>(_Other1,_Other2) noexcept"
+          with
+          [
+              _Other1=enchantment_value_id &,
+              _Other2=const double &
+          ]
+  
+  event_statistics.cpp
+  examine_item_menu.cpp
+  explosion.cpp
+  faction.cpp
+  fault.cpp
+  filesystem.cpp
+  fire_spread_loader.cpp
+  flag.cpp
+  flag_trait.cpp
+  fluid_grid.cpp
+  fmtlib_format.cpp
+  font_loader.cpp
+  fungal_effects.cpp
+  game.cpp
+  game_info.cpp
+  game_inventory.cpp
+  game_object.cpp
+  game_ui.cpp
+  gamemode.cpp
+  gamemode_defense.cpp
+  gamemode_tutorial.cpp
+  gates.cpp
+  generic_factory.cpp
+  grab.cpp
+  handle_action.cpp
+  handle_liquid.cpp
+  harvest.cpp
+  help.cpp
+  hsv_color.cpp
+  iexamine.cpp
+  iexamine_elevator.cpp
+  ime.cpp
+  init.cpp
+  input.cpp
+  inventory.cpp
+  inventory_ui.cpp
+  item.cpp
+  item_action.cpp
+  item_category.cpp
+  item_contents.cpp
+C:\games\Cataclysm-BN-coop-fork\src\init.cpp(1145,11): warning C4286: const JsonError &: перехвачено базовым классом ("const std::exception &") в строке 1143 [C:\games\Cataclysm-BN-coop-fork\out\build\windows-tiles-sounds-x64-msvc\src\cataclysm-bn-tiles-common.vcxproj]
+  item_factory.cpp
+  item_functions.cpp
+  item_group.cpp
+  item_hauling.cpp
+  item_search.cpp
+  item_stack.cpp
+  iteminfo_armor.cpp
+  iteminfo_format_utils.cpp
+  iteminfo_query.cpp
+  itype.cpp
+  iuse.cpp
+  iuse_actor.cpp
+  iuse_software.cpp
+  iuse_software_kitten.cpp
+  iuse_software_lightson.cpp
+  iuse_software_minesweeper.cpp
+  iuse_software_snake.cpp
