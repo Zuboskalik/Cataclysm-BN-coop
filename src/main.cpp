@@ -37,6 +37,7 @@
 #include "runtime_handlers.h"
 #include "string_formatter.h"
 #include "main_menu.h"
+#include "mp_session.h"
 #include "mapsharing.h"
 #include "options.h"
 #include "output.h"
@@ -926,6 +927,8 @@ int main( int argc, char *argv[] )
         shared_ptr_fast<ui_adaptor> ui = g->create_or_get_main_ui_adaptor();
         options_manager::cache_balance_options();
         while( !g->do_turn() );
+        // Co-op: close the session (and drop a client's scratch world).
+        cata_mp::on_game_end();
     }
 
     exit_handler( -999 );

@@ -948,6 +948,12 @@ public:
      * Note: the map must have been loaded before this can be called.
      */
     void shift(const point_rel_sm& sp);
+    /**
+     * Co-op client: stores submaps received from the host (map save format)
+     * and rebinds only the affected grid cells.  Unlike load(), the submaps
+     * are not actualized: the host already simulated them.
+     */
+    void mp_apply_submaps(JsonIn& jsin);
     void clear_spawns();
     void clear_traps();
 

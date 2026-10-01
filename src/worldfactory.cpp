@@ -74,6 +74,18 @@ WORLDINFO *worldfactory::make_new_world( const std::vector<mod_id> &mods )
     return add_world( std::move( retworld ) );
 }
 
+WORLDINFO *worldfactory::make_new_world_named( const std::string &name,
+        const std::vector<mod_id> &mods, const std::function<void( WORLDINFO & )> &setup )
+{
+    std::unique_ptr<WORLDINFO> retworld = std::make_unique<WORLDINFO>();
+    retworld->world_name = name;
+    retworld->active_mod_order = mods;
+    if( setup ) {
+        setup( *retworld );
+    }
+    return add_world( std::move( retworld ) );
+}
+
 WORLDINFO *worldfactory::make_new_world( bool show_prompt, const std::string &world_to_copy )
 {
     // World to return after generating

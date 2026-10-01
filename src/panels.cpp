@@ -1,4 +1,5 @@
 #include "panels.h"
+#include "mp_session.h"
 
 #include "action.h"
 #include "avatar.h"
@@ -2428,9 +2429,24 @@ bool default_render()
     return true;
 }
 
+
+// Co-op session status (only shown while a co-op session is running).
+static void draw_coop( avatar &, const catacurses::window &w )
+{
+    werase( w );
+    fold_and_print( w, point_zero, getmaxx( w ), c_light_cyan, cata_mp::status_line() );
+    wnoutrefresh( w );
+}
+
+static bool coop_panel_visible()
+{
+    return cata_mp::active();
+}
+
 static std::vector<window_panel> initialize_default_classic_panels()
 {
     std::vector<window_panel> ret;
+    ret.emplace_back( draw_coop, translate_marker( "Co-op" ), 2, 44, true, coop_panel_visible, true );
 
     ret.emplace_back( draw_health_classic, translate_marker( "Health" ), 7, 44, true );
     ret.emplace_back( draw_veh_classic, translate_marker( "Vehicle" ), 2, 44, true, veh_panel );
@@ -2469,6 +2485,7 @@ static std::vector<window_panel> initialize_default_classic_panels()
 static std::vector<window_panel> initialize_default_compact_panels()
 {
     std::vector<window_panel> ret;
+    ret.emplace_back( draw_coop, translate_marker( "Co-op" ), 2, 32, true, coop_panel_visible, true );
 
     ret.emplace_back( draw_limb2, translate_marker( "Limbs" ), 3, 32, true );
     ret.emplace_back( draw_stealth, translate_marker( "Sound" ), 1, 32, true );
@@ -2499,6 +2516,7 @@ static std::vector<window_panel> initialize_default_compact_panels()
 static std::vector<window_panel> initialize_default_label_narrow_panels()
 {
     std::vector<window_panel> ret;
+    ret.emplace_back( draw_coop, translate_marker( "Co-op" ), 2, 32, true, coop_panel_visible, true );
 
     ret.emplace_back( draw_hint, translate_marker( "Hint" ), 1, 32, true );
     ret.emplace_back( draw_limb_narrow, translate_marker( "Limbs" ), 3, 32, true );
@@ -2535,6 +2553,7 @@ static std::vector<window_panel> initialize_default_label_narrow_panels()
 static std::vector<window_panel> initialize_default_label_panels()
 {
     std::vector<window_panel> ret;
+    ret.emplace_back( draw_coop, translate_marker( "Co-op" ), 2, 44, true, coop_panel_visible, true );
 
     ret.emplace_back( draw_hint, translate_marker( "Hint" ), 1, 44, true );
     ret.emplace_back( draw_limb_wide, translate_marker( "Limbs" ), 2, 44, true );

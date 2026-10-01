@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "mp_session.h"
 
 #include "action_time_scale.h"
 #include "auto_pickup.h"
@@ -2774,6 +2775,9 @@ void npc::die( Creature *nkiller )
         // *only* set to true in this function!
         return;
     }
+    if( cata_mp::is_proxy( *this ) ) {
+        cata_mp::host_proxy_died( *this );
+    }
     // Need to unboard from vehicle before dying, otherwise
     // the vehicle code cannot find us
     if( in_vehicle ) {
@@ -2988,14 +2992,31 @@ std::string npc_attitude_name( npc_attitude att )
 //message related stuff
 
 //message related stuff
+void npc::add_msg_if_player( const std::string &msg ) const
+{
+    if( cata_mp::is_proxy( *this ) ) {
+        cata_mp::proxy_message( *this, msg );
+    }
+}
+
+void npc::add_msg_if_player( const game_message_params &params, const std::string &msg ) const
+{
+    if( cata_mp::is_proxy( *this ) ) {
+        cata_mp::proxy_message( *this, params, msg );
+    }
+}
+
 void npc::add_msg_if_npc( const std::string &msg ) const
 {
     add_msg( replace_with_npc_name( msg ) );
 }
 
-void npc::add_msg_player_or_npc( const std::string &/*player_msg*/,
+void npc::add_msg_player_or_npc( const std::string &player_msg,
                                  const std::string &npc_msg ) const
 {
+    if( cata_mp::is_proxy( *this ) ) {
+        cata_mp::proxy_message( *this, player_msg );
+    }
     if( g->u.sees( *this ) ) {
         add_msg( replace_with_npc_name( npc_msg ) );
     }
@@ -3007,23 +3028,34 @@ void npc::add_msg_if_npc( const game_message_params &params, const std::string &
 }
 
 void npc::add_msg_player_or_npc( const game_message_params &params,
-                                 const std::string &/*player_msg*/,
+                                 const std::string &player_msg,
                                  const std::string &npc_msg ) const
 {
+    if( cata_mp::is_proxy( *this ) ) {
+        cata_mp::proxy_message( *this, params, player_msg );
+    }
     if( g->u.sees( *this ) ) {
         add_msg( params, replace_with_npc_name( npc_msg ) );
     }
 }
 
-void npc::add_msg_player_or_say( const std::string &/*player_msg*/,
+void npc::add_msg_player_or_say( const std::string &player_msg,
                                  const std::string &npc_speech ) const
 {
+    if( cata_mp::is_proxy( *this ) ) {
+        cata_mp::proxy_message( *this, player_msg );
+        return;
+    }
     say( npc_speech );
 }
 
-void npc::add_msg_player_or_say( const game_message_params &/*params*/,
-                                 const std::string &/*player_msg*/, const std::string &npc_speech ) const
+void npc::add_msg_player_or_say( const game_message_params &params,
+                                 const std::string &player_msg, const std::string &npc_speech ) const
 {
+    if( cata_mp::is_proxy( *this ) ) {
+        cata_mp::proxy_message( *this, params, player_msg );
+        return;
+    }
     say( npc_speech );
 }
 

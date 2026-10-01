@@ -71,6 +71,7 @@
 #include "mission.h"
 #include "mongroup.h"
 #include "monster.h"
+#include "mp_session.h"
 #include "morale_types.h"
 #include "mtype.h"
 #include "npc.h"
@@ -7277,6 +7278,31 @@ auto map::get_dir_circle(const tripoint_bub_ms& f, const tripoint_bub_ms& t) con
     return circle;
 }
 
+void map::mp_apply_submaps(JsonIn& jsin) {
+    // Drop cache references to vehicles of submaps that are about to be freed.
+    const auto forget_vehicles = [this](const tripoint_abs_sm&, submap& old) {
+        for (const auto& veh : old.vehicles) {
+            if (!veh) { continue; }
+            for (int z = -OVERMAP_DEPTH; z <= OVERMAP_HEIGHT; ++z) {
+                auto& ch = get_cache(z);
+                ch.vehicle_list.erase(veh.get());
+                ch.zone_vehicles.erase(veh.get());
+            }
+            dirty_vehicle_list.erase(veh.get());
+        }
+    };
+    const auto stored = get_mapbuffer().mp_load_submaps(jsin, forget_vehicles);
+    auto touched = false;
+    for (const auto& p : stored) {
+        if (!inbounds(p)) { continue; }
+        loadn(abs_to_map_local(*this, p), true);
+        touched = true;
+    }
+    if (!touched) { return; }
+    refresh_active_submap_view();
+    reset_vehicle_cache();
+}
+
 void map::load(const point_abs_sm& w, const bool update_vehicle, const bool pump_events) {
     funnel_locations_.clear();
     set_abs_sub(w);
@@ -7970,6 +7996,8 @@ void map::spawn_monsters_submap_group(
 }
 
 void map::spawn_monsters_submap(const tripoint_bub_sm& gp, bool ignore_sight) {
+    // A co-op client receives every creature from the host.
+    if (cata_mp::suppress_world_simulation()) { return; }
     // Load unloaded monsters
     // TODO: fix point types
     get_overmapbuffer(bound_dimension_).spawn_monster(map_local_to_abs(*this, gp));

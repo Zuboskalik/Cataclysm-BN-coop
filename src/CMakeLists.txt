@@ -21,6 +21,10 @@ foreach (catalua_src IN LISTS CATALUA_BINDINGS_SOURCES)
         SKIP_PRECOMPILE_HEADERS ON)
 endforeach ()
 
+# Asio pulls in winsock2.h/windows.h, which clashes with the shared PCH.
+set_source_files_properties(${CMAKE_SOURCE_DIR}/src/mp_net.cpp PROPERTIES
+    SKIP_PRECOMPILE_HEADERS ON)
+
 file(GLOB_RECURSE CATACLYSM_BN_HEADERS CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.h)
 list(FILTER CATACLYSM_BN_HEADERS EXCLUDE REGEX "/src/(lua|sol|third-party)/")
 
@@ -75,6 +79,12 @@ function(setup_common_target_properties target_name)
         target_compile_definitions(${target_name} PUBLIC LUA_USE_MACOSX)
     endif()
     target_link_libraries(${target_name} PUBLIC libsol)
+
+    # Co-op multiplayer networking: standalone header-only Asio.
+    target_include_directories(${target_name} SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/src/third-party/asio)
+    if (WIN32)
+        target_link_libraries(${target_name} PUBLIC ws2_32.lib mswsock.lib iphlpapi.lib)
+    endif ()
 
     # Windows-specific libraries
     if (WIN32)
@@ -186,6 +196,10 @@ if (TILES)
     endif ()
 
     set_target_properties(cataclysm-bn-tiles PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    if (MSVC)
+        # Address -> function map for reading crash.log stack traces of release builds.
+        target_link_options(cataclysm-bn-tiles PRIVATE /MAP)
+    endif ()
     if (COMMAND cata_copy_windows_lavapipe_runtime)
         cata_copy_windows_lavapipe_runtime(cataclysm-bn-tiles)
     endif()

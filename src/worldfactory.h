@@ -39,6 +39,13 @@ class worldfactory
         WORLDINFO *make_new_world( special_game_type special_type );
         // Used for unit tests - does NOT verify if the mods can be loaded
         WORLDINFO *make_new_world( const std::vector<mod_id> &mods );
+        /**
+         * Creates (and saves) a world with a fixed name, the given mods and a
+         * hook to adjust its options before it is written.  Used for the
+         * co-op client's scratch world.
+         */
+        WORLDINFO *make_new_world_named( const std::string &name, const std::vector<mod_id> &mods,
+                                         const std::function<void( WORLDINFO & )> &setup );
         // Returns the *existing* world of given name.
         WORLDINFO *get_world( const std::string &name );
         // Returns index for world name, 0 if world cannot be found.

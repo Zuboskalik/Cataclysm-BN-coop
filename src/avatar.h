@@ -79,6 +79,11 @@ class avatar : public player
         bool save_map_memory();
         void load_map_memory();
         void clear_map_memory();
+        /**
+         * Co-op client: replaces this character with the serialized state of
+         * the proxy NPC the host keeps for us, keeping the local map memory.
+         */
+        void mp_mirror_load( JsonIn &jsin );
 
         // newcharacter.cpp
         bool create( character_type type, const std::string &tempname = "" );

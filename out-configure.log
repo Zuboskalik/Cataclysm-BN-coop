@@ -1,0 +1,992 @@
+Preset CMake variables:
+
+  CMAKE_CONFIGURATION_TYPES="Debug;RelWithDebInfo;Release"
+  CMAKE_EXPORT_COMPILE_COMMANDS="ON"
+  CMAKE_INSTALL_MESSAGE="NEVER"
+  CMAKE_PROJECT_INCLUDE_BEFORE="C:/games/Cataclysm-BN-coop-fork/build-scripts/windows-tiles-sounds-x64-msvc.cmake"
+  CMAKE_TOOLCHAIN_FILE="C:/games/Cataclysm-BN-coop-fork/build-scripts/MSVC.cmake"
+  CURSES="False"
+  DYNAMIC_LINKING="False"
+  LOCALIZE="True"
+  SOUND="True"
+  TILES="True"
+  VCPKG_TARGET_TRIPLET="x64-windows-static"
+
+-- Generated CMakeUserPresets.json for terminal builds.
+-- Customize it to add local build overrides (see CMakeUserPresets.json.example).
+-- Downloading pre-built gettext binaries...
+-- [download 0% complete]
+-- [download 1% complete]
+-- [download 2% complete]
+-- [download 3% complete]
+-- [download 4% complete]
+-- [download 5% complete]
+-- [download 6% complete]
+-- [download 7% complete]
+-- [download 8% complete]
+-- [download 9% complete]
+-- [download 10% complete]
+-- [download 11% complete]
+-- [download 12% complete]
+-- [download 13% complete]
+-- [download 14% complete]
+-- [download 15% complete]
+-- [download 16% complete]
+-- [download 17% complete]
+-- [download 18% complete]
+-- [download 19% complete]
+-- [download 20% complete]
+-- [download 21% complete]
+-- [download 22% complete]
+-- [download 23% complete]
+-- [download 24% complete]
+-- [download 25% complete]
+-- [download 26% complete]
+-- [download 27% complete]
+-- [download 28% complete]
+-- [download 29% complete]
+-- [download 30% complete]
+-- [download 31% complete]
+-- [download 32% complete]
+-- [download 33% complete]
+-- [download 34% complete]
+-- [download 35% complete]
+-- [download 36% complete]
+-- [download 37% complete]
+-- [download 38% complete]
+-- [download 39% complete]
+-- [download 40% complete]
+-- [download 41% complete]
+-- [download 42% complete]
+-- [download 43% complete]
+-- [download 44% complete]
+-- [download 45% complete]
+-- [download 46% complete]
+-- [download 47% complete]
+-- [download 48% complete]
+-- [download 49% complete]
+-- [download 50% complete]
+-- [download 51% complete]
+-- [download 52% complete]
+-- [download 53% complete]
+-- [download 54% complete]
+-- [download 55% complete]
+-- [download 56% complete]
+-- [download 57% complete]
+-- [download 58% complete]
+-- [download 59% complete]
+-- [download 60% complete]
+-- [download 61% complete]
+-- [download 62% complete]
+-- [download 63% complete]
+-- [download 64% complete]
+-- [download 65% complete]
+-- [download 66% complete]
+-- [download 67% complete]
+-- [download 68% complete]
+-- [download 69% complete]
+-- [download 70% complete]
+-- [download 71% complete]
+-- [download 72% complete]
+-- [download 73% complete]
+-- [download 74% complete]
+-- [download 75% complete]
+-- [download 76% complete]
+-- [download 77% complete]
+-- [download 78% complete]
+-- [download 79% complete]
+-- [download 80% complete]
+-- [download 81% complete]
+-- [download 82% complete]
+-- [download 83% complete]
+-- [download 84% complete]
+-- [download 85% complete]
+-- [download 86% complete]
+-- [download 87% complete]
+-- [download 88% complete]
+-- [download 89% complete]
+-- [download 90% complete]
+-- [download 91% complete]
+-- [download 92% complete]
+-- [download 93% complete]
+-- [download 94% complete]
+-- [download 95% complete]
+-- [download 96% complete]
+-- [download 97% complete]
+-- [download 98% complete]
+-- [download 99% complete]
+-- [download 100% complete]
+-- Extracting gettext binaries...
+-- gettext installed to: C:/games/Cataclysm-BN-coop-fork/build-data/gettext
+-- Running vcpkg install
+Fetching registry information from https://github.com/microsoft/vcpkg (HEAD)...
+Detecting compiler hash for triplet x64-windows...
+A suitable version of powershell-core was not found (required v7.5.3).
+Downloading https://github.com/PowerShell/PowerShell/releases/download/v7.5.3/PowerShell-7.5.3-win-x64.zip -> PowerShell-7.5.3-win-x64.zip
+Successfully downloaded PowerShell-7.5.3-win-x64.zip
+Extracting powershell-core...
+A suitable version of 7zip was not found (required v25.1.0).
+Downloading https://github.com/ip7z/7zip/releases/download/25.01/7z2501.exe -> 7z2501.7z.exe
+Successfully downloaded 7z2501.7z.exe
+Extracting 7zip...
+A suitable version of 7zr was not found (required v25.1.0).
+Downloading https://github.com/ip7z/7zip/releases/download/25.01/7zr.exe -> 7d84fcad-7zr.exe
+Successfully downloaded 7d84fcad-7zr.exe
+Compiler found: C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe
+Detecting compiler hash for triplet x64-windows-static...
+Compiler found: C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe
+The following packages will be built and installed:
+  * brotli:x64-windows-static@1.2.0 -- git+https://github.com/microsoft/vcpkg@0fb79bb13588702a9e06057745b4aed95ce5c861
+  * bzip2[core,tool]:x64-windows-static@1.0.8#6 -- git+https://github.com/microsoft/vcpkg@2d029da682847c5ebdc54e4dbea001331a02207e
+  * directx-dxc:x64-windows-static@2026-02-20 -- git+https://github.com/microsoft/vcpkg@368c493caa55971e68254b68ac7ce769aee0890b
+  * freetype[brotli,bzip2,core,png,zlib]:x64-windows-static@2.13.3 -- git+https://github.com/microsoft/vcpkg@8a2c633dcc14eaabdb31cf4637242f4e3c2f3fa2
+  * libflac[core,stack-protector]:x64-windows-static@1.5.0 -- git+https://github.com/microsoft/vcpkg@1b83f01536820e062681fe33109e44bb3f597aca
+  * libjpeg-turbo:x64-windows-static@3.1.3 -- git+https://github.com/microsoft/vcpkg@89f73b6dea674235727ec80355b894a688d06726
+  * libogg:x64-windows-static@1.3.6#1 -- git+https://github.com/microsoft/vcpkg@0631c72b35b0e169220b9c0fa9a6af4b229268cb
+  * libpng:x64-windows-static@1.6.55 -- git+https://github.com/microsoft/vcpkg@f300cf728bdcc0e998f18a520467cfdae5667bdf
+  * libvorbis:x64-windows-static@1.3.7#4 -- git+https://github.com/microsoft/vcpkg@149b8037ad8023f0f1b130616cf1a90238083cb0
+  * libwebp[core,libwebpmux,nearlossless,simd,unicode]:x64-windows-static@1.6.0#2 -- git+https://github.com/microsoft/vcpkg@5366c6ab4c6a5ece31ab06309b9729d29a5d4da1
+  * mpg123:x64-windows-static@1.33.4 -- git+https://github.com/microsoft/vcpkg@a73a25179bd1604ca95602e67284fc0e011e99a7
+    sdl3[core,vulkan]:x64-windows-static@3.4.2 -- git+https://github.com/microsoft/vcpkg@fed2a405770d3ac4416e972ea31f0476e6ac23dd
+    sdl3-image[core,jpeg,png,webp]:x64-windows-static@3.4.0 -- git+https://github.com/microsoft/vcpkg@03ff42d864ca8e4dc391835a5a4819b8178c403c
+    sdl3-mixer[core,libflac,libvorbis,mpg123,wavpack]:x64-windows-static@3.2.0 -- git+https://github.com/microsoft/vcpkg@a1f2a16b382a4a84eadedcce4ace58a0de4a8061
+    sdl3-shadercross:x64-windows-static@3.0.0-preview1 -- git+https://github.com/microsoft/vcpkg@f0ef26c4b7d241bd684718c7884fe944426b2d56
+    sdl3-ttf:x64-windows-static@3.2.2#1 -- git+https://github.com/microsoft/vcpkg@b837af95dcd33306f4f4eaae1466f074a131bbaf
+  * spirv-cross:x64-windows-static@1.4.341.0 -- git+https://github.com/microsoft/vcpkg@2291f4ea0757f0aaf58d472b24d96c729129471e
+  * spirv-headers:x64-windows-static@1.4.341.0 -- git+https://github.com/microsoft/vcpkg@3f9b254464ac53450156d4c2edac3235750b5316
+    sqlite3[core,json1]:x64-windows-static@3.52.0 -- git+https://github.com/microsoft/vcpkg@623170f38740e06ec573ccfa1f501c5f4c320e54
+  * vcpkg-cmake:x64-windows@2024-04-23 -- git+https://github.com/microsoft/vcpkg@e74aa1e8f93278a8e71372f1fa08c3df420eb840
+  * vcpkg-cmake-config:x64-windows@2024-05-23 -- git+https://github.com/microsoft/vcpkg@97a63e4bc1a17422ffe4eff71da53b4b561a7841
+  * wavpack:x64-windows-static@5.9.0 -- git+https://github.com/microsoft/vcpkg@c1135a4bf0e9a8dd1c07fffa886e75ec6ee60386
+  * yasm[core,tools]:x64-windows@1.3.0#7 -- git+https://github.com/microsoft/vcpkg@aae36f033e868ed60d6894f260e7b5ee515089b6
+    zlib:x64-windows-static@1.3.1 -- git+https://github.com/microsoft/vcpkg@3f05e04b9aededb96786a911a16193cdb711f0c9
+Additional packages (*) will be modified to complete this operation.
+Restored 0 package(s) from C:\Users\zubos\AppData\Local\vcpkg\archives in 2.75 ms. Use --debug to see more details.
+Installing 1/24 vcpkg-cmake-config:x64-windows@2024-05-23...
+Building vcpkg-cmake-config:x64-windows@2024-05-23...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\97a63e4bc1a17422ffe4eff71da53b4b561a7841: info: installing from git registry git+https://github.com/microsoft/vcpkg@97a63e4bc1a17422ffe4eff71da53b4b561a7841
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/vcpkg-cmake-config_x64-windows/share/vcpkg-cmake-config/vcpkg_cmake_config_fixup.cmake
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/vcpkg-cmake-config_x64-windows/share/vcpkg-cmake-config/vcpkg-port-config.cmake
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/vcpkg-cmake-config_x64-windows/share/vcpkg-cmake-config/copyright
+-- Skipping post-build validation due to VCPKG_POLICY_EMPTY_PACKAGE
+Starting submission of vcpkg-cmake-config:x64-windows@2024-05-23 to 1 binary cache(s) in the background
+Elapsed time to handle vcpkg-cmake-config:x64-windows: 84.3 ms
+vcpkg-cmake-config:x64-windows package ABI: 7305a68cc3348e43f065344959ac8585e72683cd5bb389e47adb19e571d80904
+Installing 2/24 vcpkg-cmake:x64-windows@2024-04-23...
+Building vcpkg-cmake:x64-windows@2024-04-23...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\e74aa1e8f93278a8e71372f1fa08c3df420eb840: info: installing from git registry git+https://github.com/microsoft/vcpkg@e74aa1e8f93278a8e71372f1fa08c3df420eb840
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/vcpkg-cmake_x64-windows/share/vcpkg-cmake/vcpkg_cmake_configure.cmake
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/vcpkg-cmake_x64-windows/share/vcpkg-cmake/vcpkg_cmake_build.cmake
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/vcpkg-cmake_x64-windows/share/vcpkg-cmake/vcpkg_cmake_install.cmake
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/vcpkg-cmake_x64-windows/share/vcpkg-cmake/vcpkg-port-config.cmake
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/vcpkg-cmake_x64-windows/share/vcpkg-cmake/copyright
+-- Performing post-build validation
+Starting submission of vcpkg-cmake:x64-windows@2024-04-23 to 1 binary cache(s) in the background
+Elapsed time to handle vcpkg-cmake:x64-windows: 96.5 ms
+vcpkg-cmake:x64-windows package ABI: b8594dbe60456bc3a50cc712d0013719fb23c302c5b07d2208356220afef9d42
+Completed submission of vcpkg-cmake-config:x64-windows@2024-05-23 to 1 binary cache(s) in 41.9 ms
+Installing 3/24 sdl3[core,vulkan]:x64-windows-static@3.4.2...
+Building sdl3[core,vulkan]:x64-windows-static@3.4.2...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\fed2a405770d3ac4416e972ea31f0476e6ac23dd: info: installing from git registry git+https://github.com/microsoft/vcpkg@fed2a405770d3ac4416e972ea31f0476e6ac23dd
+Downloading https://github.com/libsdl-org/SDL/archive/release-3.4.2.tar.gz -> libsdl-org-SDL-release-3.4.2.tar.gz
+Successfully downloaded libsdl-org-SDL-release-3.4.2.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/libsdl-org-SDL-release-3.4.2.tar.gz
+-- Applying patch fix-freebsd.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/sdl3/src/ease-3.4.2-7bb88eae14.clean
+-- Configuring x64-windows-static
+CMake Warning at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/x64-windows/share/vcpkg-cmake/vcpkg_cmake_configure.cmake:344 (message):
+  The following variables are not used in CMakeLists.txt:
+
+      SDL_UNIX_CONSOLE_BUILD
+
+  Please recheck them and remove the unnecessary options from the
+  `vcpkg_cmake_configure` call.
+
+  If these options should still be passed for whatever reason, please use the
+  `MAYBE_UNUSED_VARIABLES` argument.
+Call Stack (most recent call first):
+  C:/Users/zubos/AppData/Local/vcpkg/registries/git-trees/fed2a405770d3ac4416e972ea31f0476e6ac23dd/portfile.cmake:47 (vcpkg_cmake_configure)
+  scripts/ports.cmake:206 (include)
+
+
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3_x64-windows-static/lib/pkgconfig/sdl3.pc
+Downloading msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst, trying https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+Successfully downloaded msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+Downloading msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst, trying https://mirror.msys2.org/msys/x86_64/msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+Successfully downloaded msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3_x64-windows-static/debug/lib/pkgconfig/sdl3.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3_x64-windows-static/share/sdl3/usage
+-- Performing post-build validation
+Starting submission of sdl3[core,vulkan]:x64-windows-static@3.4.2 to 1 binary cache(s) in the background
+Elapsed time to handle sdl3:x64-windows-static: 45 s
+sdl3:x64-windows-static package ABI: 4ed421f914241ddfff119e8c57fed30ee83e3147865acf86456ddc67ddd0fe3b
+Completed submission of vcpkg-cmake:x64-windows@2024-04-23 to 1 binary cache(s) in 42.7 ms
+Installing 4/24 libwebp[core,libwebpmux,nearlossless,simd,unicode]:x64-windows-static@1.6.0#2...
+Building libwebp[core,libwebpmux,nearlossless,simd,unicode]:x64-windows-static@1.6.0#2...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\5366c6ab4c6a5ece31ab06309b9729d29a5d4da1: info: installing from git registry git+https://github.com/microsoft/vcpkg@5366c6ab4c6a5ece31ab06309b9729d29a5d4da1
+Downloading https://github.com/webmproject/libwebp/archive/v1.6.0.tar.gz -> webmproject-libwebp-v1.6.0.tar.gz
+Successfully downloaded webmproject-libwebp-v1.6.0.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/webmproject-libwebp-v1.6.0.tar.gz
+-- Applying patch 0002-cmake-config.patch
+-- Applying patch 0003-simd.patch
+-- Applying patch 0008-sdl.patch
+-- Applying patch 0009-cpufeatures-android.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/libwebp/src/v1.6.0-bbdfbfe91d.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/lib/pkgconfig/libsharpyuv.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/lib/pkgconfig/libwebp.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/lib/pkgconfig/libwebpdecoder.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/lib/pkgconfig/libwebpdemux.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/lib/pkgconfig/libwebpmux.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/debug/lib/pkgconfig/libsharpyuv.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/debug/lib/pkgconfig/libwebp.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/debug/lib/pkgconfig/libwebpdecoder.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/debug/lib/pkgconfig/libwebpdemux.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/debug/lib/pkgconfig/libwebpmux.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libwebp_x64-windows-static/share/libwebp/usage
+-- Performing post-build validation
+Starting submission of libwebp[core,libwebpmux,nearlossless,simd,unicode]:x64-windows-static@1.6.0#2 to 1 binary cache(s) in the background
+Elapsed time to handle libwebp:x64-windows-static: 24 s
+libwebp:x64-windows-static package ABI: a257085e1a1eee12fd87f3e30f82737933e341871b5ddcfc9d965941232ddbe9
+Completed submission of sdl3[core,vulkan]:x64-windows-static@3.4.2 to 1 binary cache(s) in 3.2 s
+Installing 5/24 zlib:x64-windows-static@1.3.1...
+Building zlib:x64-windows-static@1.3.1...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\3f05e04b9aededb96786a911a16193cdb711f0c9: info: installing from git registry git+https://github.com/microsoft/vcpkg@3f05e04b9aededb96786a911a16193cdb711f0c9
+Downloading https://github.com/madler/zlib/archive/v1.3.1.tar.gz -> madler-zlib-v1.3.1.tar.gz
+Successfully downloaded madler-zlib-v1.3.1.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/madler-zlib-v1.3.1.tar.gz
+-- Applying patch 0001-Prevent-invalid-inclusions-when-HAVE_-is-set-to-0.patch
+-- Applying patch 0002-build-static-or-shared-not-both.patch
+-- Applying patch 0003-android-and-mingw-fixes.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/zlib/src/v1.3.1-2e5db616bf.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/zlib_x64-windows-static/share/zlib/vcpkg-cmake-wrapper.cmake
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/zlib_x64-windows-static/lib/pkgconfig/zlib.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/zlib_x64-windows-static/debug/lib/pkgconfig/zlib.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/zlib_x64-windows-static/share/zlib/copyright
+-- Performing post-build validation
+Starting submission of zlib:x64-windows-static@1.3.1 to 1 binary cache(s) in the background
+Elapsed time to handle zlib:x64-windows-static: 9.1 s
+zlib:x64-windows-static package ABI: 8aaf9c334dbc310bdb19bacfc2715b0cc6b5b08799f0bcb891d93233560ab78d
+Completed submission of libwebp[core,libwebpmux,nearlossless,simd,unicode]:x64-windows-static@1.6.0#2 to 1 binary cache(s) in 492 ms
+Installing 6/24 libpng:x64-windows-static@1.6.55...
+Building libpng:x64-windows-static@1.6.55...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\f300cf728bdcc0e998f18a520467cfdae5667bdf: info: installing from git registry git+https://github.com/microsoft/vcpkg@f300cf728bdcc0e998f18a520467cfdae5667bdf
+Downloading https://github.com/pnggroup/libpng/archive/v1.6.55.tar.gz -> pnggroup-libpng-v1.6.55.tar.gz
+Successfully downloaded pnggroup-libpng-v1.6.55.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/pnggroup-libpng-v1.6.55.tar.gz
+-- Applying patch cmake.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/libpng/src/v1.6.55-30e824c5a8.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libpng_x64-windows-static/share/png/vcpkg-cmake-wrapper.cmake
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libpng_x64-windows-static/share/libpng/libpng-config.cmake
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libpng_x64-windows-static/lib/pkgconfig/libpng16.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libpng_x64-windows-static/debug/lib/pkgconfig/libpng16.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libpng_x64-windows-static/debug/lib/pkgconfig/libpng.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libpng_x64-windows-static/lib/pkgconfig/libpng.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libpng_x64-windows-static/share/libpng/usage
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libpng_x64-windows-static/share/libpng/copyright
+-- Performing post-build validation
+Starting submission of libpng:x64-windows-static@1.6.55 to 1 binary cache(s) in the background
+Elapsed time to handle libpng:x64-windows-static: 11 s
+libpng:x64-windows-static package ABI: cb3d69852a68f0021e4bb2736ba3f2a0a33365aca02304960ade1c2d1bbb8e0f
+Completed submission of zlib:x64-windows-static@1.3.1 to 1 binary cache(s) in 81.3 ms
+Installing 7/24 libjpeg-turbo:x64-windows-static@3.1.3...
+Building libjpeg-turbo:x64-windows-static@3.1.3...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\89f73b6dea674235727ec80355b894a688d06726: info: installing from git registry git+https://github.com/microsoft/vcpkg@89f73b6dea674235727ec80355b894a688d06726
+Downloading https://github.com/libjpeg-turbo/libjpeg-turbo/archive/3.1.3.tar.gz -> libjpeg-turbo-libjpeg-turbo-3.1.3.tar.gz
+Successfully downloaded libjpeg-turbo-libjpeg-turbo-3.1.3.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/libjpeg-turbo-libjpeg-turbo-3.1.3.tar.gz
+-- Applying patch add-options-for-docs-headers.patch
+-- Applying patch workaround_cmake_system_processor.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/libjpeg-turbo/src/3.1.3-03a6b1dd07.clean
+Downloading nasm-2.16.03-win64.zip, trying https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/win64/nasm-2.16.03-win64.zip
+Successfully downloaded nasm-2.16.03-win64.zip
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libjpeg-turbo_x64-windows-static/lib/pkgconfig/libjpeg.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libjpeg-turbo_x64-windows-static/lib/pkgconfig/libturbojpeg.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libjpeg-turbo_x64-windows-static/debug/lib/pkgconfig/libjpeg.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libjpeg-turbo_x64-windows-static/debug/lib/pkgconfig/libturbojpeg.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libjpeg-turbo_x64-windows-static/share/libjpeg-turbo/copyright
+-- Performing post-build validation
+Starting submission of libjpeg-turbo:x64-windows-static@3.1.3 to 1 binary cache(s) in the background
+Elapsed time to handle libjpeg-turbo:x64-windows-static: 30 s
+libjpeg-turbo:x64-windows-static package ABI: 1f088efabc011ec4a575892de03f44d0e8c60a0f0243250eadbb325f25c9c4e8
+Completed submission of libpng:x64-windows-static@1.6.55 to 1 binary cache(s) in 240 ms
+Installing 8/24 sdl3-image[core,jpeg,png,webp]:x64-windows-static@3.4.0...
+Building sdl3-image[core,jpeg,png,webp]:x64-windows-static@3.4.0...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\03ff42d864ca8e4dc391835a5a4819b8178c403c: info: installing from git registry git+https://github.com/microsoft/vcpkg@03ff42d864ca8e4dc391835a5a4819b8178c403c
+Downloading https://github.com/libsdl-org/SDL_image/archive/release-3.4.0.tar.gz -> libsdl-org-SDL_image-release-3.4.0.tar.gz
+Successfully downloaded libsdl-org-SDL_image-release-3.4.0.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/libsdl-org-SDL_image-release-3.4.0.tar.gz
+-- Applying patch dependencies.diff
+-- Applying patch pkgconfig-libname.diff
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/sdl3-image/src/ease-3.4.0-0f6ead767d.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-image_x64-windows-static/lib/pkgconfig/sdl3-image.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-image_x64-windows-static/debug/lib/pkgconfig/sdl3-image.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-image_x64-windows-static/share/sdl3-image/usage
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-image_x64-windows-static/share/sdl3-image/copyright
+-- Performing post-build validation
+Starting submission of sdl3-image[core,jpeg,png,webp]:x64-windows-static@3.4.0 to 1 binary cache(s) in the background
+Elapsed time to handle sdl3-image:x64-windows-static: 11 s
+sdl3-image:x64-windows-static package ABI: 2f9d79c08a0d82fdc8b6693711d3c0e4e391e18357e64f611e531012b025917a
+Completed submission of libjpeg-turbo:x64-windows-static@3.1.3 to 1 binary cache(s) in 660 ms
+Installing 9/24 wavpack:x64-windows-static@5.9.0...
+Building wavpack:x64-windows-static@5.9.0...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\c1135a4bf0e9a8dd1c07fffa886e75ec6ee60386: info: installing from git registry git+https://github.com/microsoft/vcpkg@c1135a4bf0e9a8dd1c07fffa886e75ec6ee60386
+Downloading https://github.com/dbry/WavPack/archive/5.9.0.tar.gz -> dbry-WavPack-5.9.0.tar.gz
+Successfully downloaded dbry-WavPack-5.9.0.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/dbry-WavPack-5.9.0.tar.gz
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/wavpack/src/5.9.0-5cef8290a6.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/wavpack_x64-windows-static/share/wavpack/copyright
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/wavpack_x64-windows-static/lib/pkgconfig/wavpack.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/wavpack_x64-windows-static/debug/lib/pkgconfig/wavpack.pc
+-- Performing post-build validation
+Starting submission of wavpack:x64-windows-static@5.9.0 to 1 binary cache(s) in the background
+Elapsed time to handle wavpack:x64-windows-static: 16 s
+wavpack:x64-windows-static package ABI: 0803880231c8f81f42893868a6ac207717aa7bb17c19b80ed90f7da2b0484f10
+Completed submission of sdl3-image[core,jpeg,png,webp]:x64-windows-static@3.4.0 to 1 binary cache(s) in 218 ms
+Installing 10/24 yasm[core,tools]:x64-windows@1.3.0#7...
+Building yasm[core,tools]:x64-windows@1.3.0#7...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\aae36f033e868ed60d6894f260e7b5ee515089b6: info: installing from git registry git+https://github.com/microsoft/vcpkg@aae36f033e868ed60d6894f260e7b5ee515089b6
+Downloading https://github.com/yasm/yasm/archive/009450c7ad4d425fa5a10ac4bd6efbd25248d823.tar.gz -> yasm-yasm-009450c7ad4d425fa5a10ac4bd6efbd25248d823.tar.gz
+Successfully downloaded yasm-yasm-009450c7ad4d425fa5a10ac4bd6efbd25248d823.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/yasm-yasm-009450c7ad4d425fa5a10ac4bd6efbd25248d823.tar.gz
+-- Applying patch add-feature-tools.patch
+-- Applying patch cmake-4.diff
+-- Applying patch fix-cross-build.patch
+-- Applying patch fix-overlay-pdb.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/yasm/src/d25248d823-5776a3607f.clean
+Downloading https://www.python.org/ftp/python/3.12.7/python-3.12.7-embed-amd64.zip -> python-3.12.7-embed-amd64.zip
+Successfully downloaded python-3.12.7-embed-amd64.zip
+-- Configuring x64-windows
+-- Building x64-windows-dbg
+-- Building x64-windows-rel
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/yasm_x64-windows/share/yasm/copyright
+-- Performing post-build validation
+Starting submission of yasm[core,tools]:x64-windows@1.3.0#7 to 1 binary cache(s) in the background
+Elapsed time to handle yasm:x64-windows: 30 s
+yasm:x64-windows package ABI: 4086ab0414dc349122b653be0d9bb5af297f03c0acc1be556ccaf78b943a01bf
+Completed submission of wavpack:x64-windows-static@5.9.0 to 1 binary cache(s) in 154 ms
+Installing 11/24 mpg123:x64-windows-static@1.33.4...
+Building mpg123:x64-windows-static@1.33.4...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\a73a25179bd1604ca95602e67284fc0e011e99a7: info: installing from git registry git+https://github.com/microsoft/vcpkg@a73a25179bd1604ca95602e67284fc0e011e99a7
+Downloading mpg123-1.33.4.tar.bz2, trying https://sourceforge.net/projects/mpg123/files/mpg123/1.33.4/mpg123-1.33.4.tar.bz2/download
+Successfully downloaded mpg123-1.33.4.tar.bz2
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/mpg123-1.33.4.tar.bz2
+-- Applying patch have-fpu.diff
+-- Applying patch pkgconfig.diff
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/mpg123/src/-0852196a3c.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/mpg123_x64-windows-static/lib/pkgconfig/libmpg123.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/mpg123_x64-windows-static/lib/pkgconfig/libout123.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/mpg123_x64-windows-static/lib/pkgconfig/libsyn123.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/mpg123_x64-windows-static/debug/lib/pkgconfig/libmpg123.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/mpg123_x64-windows-static/debug/lib/pkgconfig/libout123.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/mpg123_x64-windows-static/debug/lib/pkgconfig/libsyn123.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/mpg123_x64-windows-static/share/mpg123/copyright
+-- Performing post-build validation
+Starting submission of mpg123:x64-windows-static@1.33.4 to 1 binary cache(s) in the background
+Elapsed time to handle mpg123:x64-windows-static: 35 s
+mpg123:x64-windows-static package ABI: 53903707ca78f45d0b58acec8e42c80b98e0385d825fa100e21f7c0ddb9fcc36
+Completed submission of yasm[core,tools]:x64-windows@1.3.0#7 to 1 binary cache(s) in 221 ms
+Installing 12/24 libogg:x64-windows-static@1.3.6#1...
+Building libogg:x64-windows-static@1.3.6#1...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\0631c72b35b0e169220b9c0fa9a6af4b229268cb: info: installing from git registry git+https://github.com/microsoft/vcpkg@0631c72b35b0e169220b9c0fa9a6af4b229268cb
+Downloading https://github.com/xiph/ogg/archive/v1.3.6.tar.gz -> xiph-ogg-v1.3.6.tar.gz
+Successfully downloaded xiph-ogg-v1.3.6.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/xiph-ogg-v1.3.6.tar.gz
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/libogg/src/v1.3.6-4ad11a7327.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libogg_x64-windows-static/lib/pkgconfig/ogg.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libogg_x64-windows-static/debug/lib/pkgconfig/ogg.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libogg_x64-windows-static/share/libogg/copyright
+-- Performing post-build validation
+Starting submission of libogg:x64-windows-static@1.3.6#1 to 1 binary cache(s) in the background
+Elapsed time to handle libogg:x64-windows-static: 17 s
+libogg:x64-windows-static package ABI: 8e0e90914f7b4148e035b73140995b1baf73192241866a46fd3246c6c0935d63
+Completed submission of mpg123:x64-windows-static@1.33.4 to 1 binary cache(s) in 218 ms
+Installing 13/24 libvorbis:x64-windows-static@1.3.7#4...
+Building libvorbis:x64-windows-static@1.3.7#4...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\149b8037ad8023f0f1b130616cf1a90238083cb0: info: installing from git registry git+https://github.com/microsoft/vcpkg@149b8037ad8023f0f1b130616cf1a90238083cb0
+Downloading https://github.com/xiph/vorbis/archive/v1.3.7.tar.gz -> xiph-vorbis-v1.3.7.tar.gz
+Successfully downloaded xiph-vorbis-v1.3.7.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/xiph-vorbis-v1.3.7.tar.gz
+-- Applying patch 0001-Dont-export-vorbisenc-functions.patch
+-- Applying patch 0002-Fixup-pkgconfig-libs.patch
+-- Applying patch 0003-def-mingw-compat.patch
+-- Applying patch 0004-ogg-find-dependency.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/libvorbis/src/v1.3.7-c32164610e.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libvorbis_x64-windows-static/lib/pkgconfig/vorbis.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libvorbis_x64-windows-static/lib/pkgconfig/vorbisenc.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libvorbis_x64-windows-static/lib/pkgconfig/vorbisfile.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libvorbis_x64-windows-static/debug/lib/pkgconfig/vorbis.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libvorbis_x64-windows-static/debug/lib/pkgconfig/vorbisenc.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libvorbis_x64-windows-static/debug/lib/pkgconfig/vorbisfile.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libvorbis_x64-windows-static/share/libvorbis/usage
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libvorbis_x64-windows-static/share/libvorbis/copyright
+-- Performing post-build validation
+Starting submission of libvorbis:x64-windows-static@1.3.7#4 to 1 binary cache(s) in the background
+Elapsed time to handle libvorbis:x64-windows-static: 9.5 s
+libvorbis:x64-windows-static package ABI: 7b59fb90254e6ff8150c27fc510ed6aba44dc1fb43d8e358093ef0f2804eb6c6
+Completed submission of libogg:x64-windows-static@1.3.6#1 to 1 binary cache(s) in 49.5 ms
+Installing 14/24 libflac[core,stack-protector]:x64-windows-static@1.5.0...
+Building libflac[core,stack-protector]:x64-windows-static@1.5.0...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\1b83f01536820e062681fe33109e44bb3f597aca: info: installing from git registry git+https://github.com/microsoft/vcpkg@1b83f01536820e062681fe33109e44bb3f597aca
+Downloading https://github.com/xiph/flac/archive/1.5.0.tar.gz -> xiph-flac-1.5.0.tar.gz
+Successfully downloaded xiph-flac-1.5.0.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/xiph-flac-1.5.0.tar.gz
+-- Applying patch android-cmake.diff
+-- Applying patch fix-compile-options.patch
+-- Applying patch fix-find-threads.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/libflac/src/1.5.0-5ec0185c23.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libflac_x64-windows-static/lib/pkgconfig/flac++.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libflac_x64-windows-static/lib/pkgconfig/flac.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libflac_x64-windows-static/debug/lib/pkgconfig/flac++.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libflac_x64-windows-static/debug/lib/pkgconfig/flac.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libflac_x64-windows-static/share/libflac/copyright
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/libflac_x64-windows-static/share/libflac/usage
+-- Performing post-build validation
+Starting submission of libflac[core,stack-protector]:x64-windows-static@1.5.0 to 1 binary cache(s) in the background
+Elapsed time to handle libflac:x64-windows-static: 20 s
+libflac:x64-windows-static package ABI: f4c84a4b0fce24f0e1df3506a59d89ea5f25324f35ee91e91fb85dfa41cd1685
+Completed submission of libvorbis:x64-windows-static@1.3.7#4 to 1 binary cache(s) in 201 ms
+Installing 15/24 sdl3-mixer[core,libflac,libvorbis,mpg123,wavpack]:x64-windows-static@3.2.0...
+Building sdl3-mixer[core,libflac,libvorbis,mpg123,wavpack]:x64-windows-static@3.2.0...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\a1f2a16b382a4a84eadedcce4ace58a0de4a8061: info: installing from git registry git+https://github.com/microsoft/vcpkg@a1f2a16b382a4a84eadedcce4ace58a0de4a8061
+Downloading https://github.com/libsdl-org/SDL_mixer/archive/release-3.2.0.tar.gz -> libsdl-org-SDL_mixer-release-3.2.0.tar.gz
+Successfully downloaded libsdl-org-SDL_mixer-release-3.2.0.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/libsdl-org-SDL_mixer-release-3.2.0.tar.gz
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/sdl3-mixer/src/ease-3.2.0-36575875f8.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-mixer_x64-windows-static/lib/pkgconfig/sdl3-mixer.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-mixer_x64-windows-static/debug/lib/pkgconfig/sdl3-mixer.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-mixer_x64-windows-static/share/sdl3-mixer/usage
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-mixer_x64-windows-static/share/sdl3-mixer/copyright
+-- Performing post-build validation
+Starting submission of sdl3-mixer[core,libflac,libvorbis,mpg123,wavpack]:x64-windows-static@3.2.0 to 1 binary cache(s) in the background
+Elapsed time to handle sdl3-mixer:x64-windows-static: 17 s
+sdl3-mixer:x64-windows-static package ABI: 874197a3808aea4268212d91f4be2ee4ba1321c90c691f02155bfc44c22cb260
+Completed submission of libflac[core,stack-protector]:x64-windows-static@1.5.0 to 1 binary cache(s) in 278 ms
+Installing 16/24 spirv-headers:x64-windows-static@1.4.341.0...
+Building spirv-headers:x64-windows-static@1.4.341.0...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\3f9b254464ac53450156d4c2edac3235750b5316: info: installing from git registry git+https://github.com/microsoft/vcpkg@3f9b254464ac53450156d4c2edac3235750b5316
+Downloading https://github.com/KhronosGroup/SPIRV-Headers/archive/vulkan-sdk-1.4.341.0.tar.gz -> KhronosGroup-SPIRV-Headers-vulkan-sdk-1.4.341.0.tar.gz
+Successfully downloaded KhronosGroup-SPIRV-Headers-vulkan-sdk-1.4.341.0.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/KhronosGroup-SPIRV-Headers-vulkan-sdk-1.4.341.0.tar.gz
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/spirv-headers/src/-1.4.341.0-426027471c.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/spirv-headers_x64-windows-static/share/pkgconfig/SPIRV-Headers.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/spirv-headers_x64-windows-static/debug/share/pkgconfig/SPIRV-Headers.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/spirv-headers_x64-windows-static/share/spirv-headers/copyright
+-- Performing post-build validation
+Starting submission of spirv-headers:x64-windows-static@1.4.341.0 to 1 binary cache(s) in the background
+Elapsed time to handle spirv-headers:x64-windows-static: 8.5 s
+spirv-headers:x64-windows-static package ABI: 15760aa24d01f6d2a318d0248b11eb5df8e8fe11c3335dd34f7983cf3a1a8538
+Completed submission of sdl3-mixer[core,libflac,libvorbis,mpg123,wavpack]:x64-windows-static@3.2.0 to 1 binary cache(s) in 3.8 s
+Installing 17/24 spirv-cross:x64-windows-static@1.4.341.0...
+Building spirv-cross:x64-windows-static@1.4.341.0...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\2291f4ea0757f0aaf58d472b24d96c729129471e: info: installing from git registry git+https://github.com/microsoft/vcpkg@2291f4ea0757f0aaf58d472b24d96c729129471e
+Downloading https://github.com/KhronosGroup/SPIRV-Cross/archive/vulkan-sdk-1.4.341.0.tar.gz -> KhronosGroup-SPIRV-Cross-vulkan-sdk-1.4.341.0.tar.gz
+Successfully downloaded KhronosGroup-SPIRV-Cross-vulkan-sdk-1.4.341.0.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/KhronosGroup-SPIRV-Cross-vulkan-sdk-1.4.341.0.tar.gz
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/spirv-cross/src/-1.4.341.0-7c75c19129.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/spirv-cross_x64-windows-static/lib/pkgconfig/spirv-cross-c.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/spirv-cross_x64-windows-static/debug/lib/pkgconfig/spirv-cross-c.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/spirv-cross_x64-windows-static/share/spirv-cross/copyright
+-- Performing post-build validation
+Starting submission of spirv-cross:x64-windows-static@1.4.341.0 to 1 binary cache(s) in the background
+Elapsed time to handle spirv-cross:x64-windows-static: 36 s
+spirv-cross:x64-windows-static package ABI: 28c96de205b5db52ab774cb1ea9ed9574ed17017844e9a92e855fcb7316f1afb
+Completed submission of spirv-headers:x64-windows-static@1.4.341.0 to 1 binary cache(s) in 92.9 ms
+Installing 18/24 directx-dxc:x64-windows-static@2026-02-20...
+Building directx-dxc:x64-windows-static@2026-02-20...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\368c493caa55971e68254b68ac7ce769aee0890b: info: installing from git registry git+https://github.com/microsoft/vcpkg@368c493caa55971e68254b68ac7ce769aee0890b
+-- Note: directx-dxc always requires dynamic library linkage at runtime.
+Downloading https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2602/dxc_2026_02_20.zip -> dxc_2026_02_20.zip
+Successfully downloaded dxc_2026_02_20.zip
+Downloading https://raw.githubusercontent.com/microsoft/DirectXShaderCompiler/v1.9.2602/LICENSE.TXT -> LICENSE.2026_02_20
+Successfully downloaded LICENSE.2026_02_20
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/dxc_2026_02_20.zip
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/directx-dxc/src/2026_02_20-7ec56c0da1.clean
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/include/directx-dxc/dxcapi.h
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/include/directx-dxc/dxcerrors.h
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/include/directx-dxc/dxcisense.h
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/include/directx-dxc/d3d12shader.h
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/lib/dxcompiler.lib
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/debug/lib/dxcompiler.lib
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/bin/dxcompiler.dll
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/bin/dxil.dll
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/debug/bin/dxcompiler.dll
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/debug/bin/dxil.dll
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/tools/directx-dxc//dxc.exe
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/tools/directx-dxc//dxcompiler.dll
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/tools/directx-dxc//dxil.dll
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/share/directx-dxc/usage
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/directx-dxc_x64-windows-static/share/directx-dxc/copyright
+-- Performing post-build validation
+Starting submission of directx-dxc:x64-windows-static@2026-02-20 to 1 binary cache(s) in the background
+Elapsed time to handle directx-dxc:x64-windows-static: 19 s
+directx-dxc:x64-windows-static package ABI: 39b48f22cc8c67516d991b4efe4fe5c5e253258932b5a2fcf22267d27a37e485
+Completed submission of spirv-cross:x64-windows-static@1.4.341.0 to 1 binary cache(s) in 3.5 s
+Installing 19/24 sdl3-shadercross:x64-windows-static@3.0.0-preview1...
+Building sdl3-shadercross:x64-windows-static@3.0.0-preview1...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\f0ef26c4b7d241bd684718c7884fe944426b2d56: info: installing from git registry git+https://github.com/microsoft/vcpkg@f0ef26c4b7d241bd684718c7884fe944426b2d56
+Downloading https://github.com/libsdl-org/SDL_shadercross/archive/7b7365a86611b2a7b6462e521cf1c43a037d0970.tar.gz -> libsdl-org-SDL_shadercross-7b7365a86611b2a7b6462e521cf1c43a037d0970.tar.gz
+Successfully downloaded libsdl-org-SDL_shadercross-7b7365a86611b2a7b6462e521cf1c43a037d0970.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/libsdl-org-SDL_shadercross-7b7365a86611b2a7b6462e521cf1c43a037d0970.tar.gz
+-- Applying patch fix-directx-shader-compiler-includes.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/sdl3-shadercross/src/3a037d0970-233f0f69e9.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-shadercross_x64-windows-static/lib/pkgconfig/sdl3-shadercross.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-shadercross_x64-windows-static/debug/lib/pkgconfig/sdl3-shadercross.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-shadercross_x64-windows-static/share/sdl3-shadercross/usage
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-shadercross_x64-windows-static/share/sdl3-shadercross/copyright
+-- Performing post-build validation
+Starting submission of sdl3-shadercross:x64-windows-static@3.0.0-preview1 to 1 binary cache(s) in the background
+Elapsed time to handle sdl3-shadercross:x64-windows-static: 10 s
+sdl3-shadercross:x64-windows-static package ABI: 5863c137a1b2c24ae9dd3b832cc1f84677f95b05844d57099a001d91e76c9689
+Completed submission of directx-dxc:x64-windows-static@2026-02-20 to 1 binary cache(s) in 1.6 s
+Installing 20/24 bzip2[core,tool]:x64-windows-static@1.0.8#6...
+Building bzip2[core,tool]:x64-windows-static@1.0.8#6...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\2d029da682847c5ebdc54e4dbea001331a02207e: info: installing from git registry git+https://github.com/microsoft/vcpkg@2d029da682847c5ebdc54e4dbea001331a02207e
+Downloading bzip2-1.0.8.tar.gz, trying https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz
+Successfully downloaded bzip2-1.0.8.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/bzip2-1.0.8.tar.gz
+-- Applying patch fix-import-export-macros.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/bzip2/src/bzip2-1-336d4794a3.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/bzip2_x64-windows-static/lib/pkgconfig/bzip2.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/bzip2_x64-windows-static/debug/lib/pkgconfig/bzip2.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/bzip2_x64-windows-static/share/bzip2/copyright
+-- Performing post-build validation
+Starting submission of bzip2[core,tool]:x64-windows-static@1.0.8#6 to 1 binary cache(s) in the background
+Elapsed time to handle bzip2:x64-windows-static: 6.4 s
+bzip2:x64-windows-static package ABI: 2b4bc46bc1c17d11f05193f127d2125dc7f325c0b88f065c2d5ba675f2016c7b
+Completed submission of sdl3-shadercross:x64-windows-static@3.0.0-preview1 to 1 binary cache(s) in 1.6 s
+Installing 21/24 brotli:x64-windows-static@1.2.0...
+Building brotli:x64-windows-static@1.2.0...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\0fb79bb13588702a9e06057745b4aed95ce5c861: info: installing from git registry git+https://github.com/microsoft/vcpkg@0fb79bb13588702a9e06057745b4aed95ce5c861
+Downloading https://github.com/google/brotli/archive/v1.2.0.tar.gz -> google-brotli-v1.2.0.tar.gz
+Successfully downloaded google-brotli-v1.2.0.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/google-brotli-v1.2.0.tar.gz
+-- Applying patch install.patch
+-- Applying patch pkgconfig.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/brotli/src/v1.2.0-7af7ca71ad.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/brotli_x64-windows-static/lib/pkgconfig/libbrotlicommon.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/brotli_x64-windows-static/lib/pkgconfig/libbrotlidec.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/brotli_x64-windows-static/lib/pkgconfig/libbrotlienc.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/brotli_x64-windows-static/debug/lib/pkgconfig/libbrotlicommon.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/brotli_x64-windows-static/debug/lib/pkgconfig/libbrotlidec.pc
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/brotli_x64-windows-static/debug/lib/pkgconfig/libbrotlienc.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/brotli_x64-windows-static/share/brotli/usage
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/brotli_x64-windows-static/share/brotli/copyright
+-- Performing post-build validation
+Starting submission of brotli:x64-windows-static@1.2.0 to 1 binary cache(s) in the background
+Elapsed time to handle brotli:x64-windows-static: 12 s
+brotli:x64-windows-static package ABI: 8b4ae4fcad5b0f367933e3975b393f474ad9e6a0595f3eef0bd9dce248129b97
+Completed submission of bzip2[core,tool]:x64-windows-static@1.0.8#6 to 1 binary cache(s) in 59 ms
+Installing 22/24 freetype[brotli,bzip2,core,png,zlib]:x64-windows-static@2.13.3...
+Building freetype[brotli,bzip2,core,png,zlib]:x64-windows-static@2.13.3...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\8a2c633dcc14eaabdb31cf4637242f4e3c2f3fa2: info: installing from git registry git+https://github.com/microsoft/vcpkg@8a2c633dcc14eaabdb31cf4637242f4e3c2f3fa2
+Downloading https://gitlab.freedesktop.org//freetype/freetype/-/archive/VER-2-13-3/freetype-VER-2-13-3.tar.gz -> freetype-freetype-VER-2-13-3.tar.gz
+Successfully downloaded freetype-freetype-VER-2-13-3.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/freetype-freetype-VER-2-13-3.tar.gz
+-- Applying patch 0003-Fix-UWP.patch
+-- Applying patch brotli-static.patch
+-- Applying patch bzip2.patch
+-- Applying patch fix-exports.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/freetype/src/VER-2-13-3-8b423a038b.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/freetype_x64-windows-static/lib/pkgconfig/freetype2.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/freetype_x64-windows-static/debug/lib/pkgconfig/freetype2.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/freetype_x64-windows-static/share/freetype/usage
+-- Performing post-build validation
+Starting submission of freetype[brotli,bzip2,core,png,zlib]:x64-windows-static@2.13.3 to 1 binary cache(s) in the background
+Elapsed time to handle freetype:x64-windows-static: 11 s
+freetype:x64-windows-static package ABI: 1bc063b07414099390c48f9186c32d829d898dc1c671eb33c13e67f189288b60
+Completed submission of brotli:x64-windows-static@1.2.0 to 1 binary cache(s) in 363 ms
+Installing 23/24 sdl3-ttf:x64-windows-static@3.2.2#1...
+Building sdl3-ttf:x64-windows-static@3.2.2#1...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\b837af95dcd33306f4f4eaae1466f074a131bbaf: info: installing from git registry git+https://github.com/microsoft/vcpkg@b837af95dcd33306f4f4eaae1466f074a131bbaf
+Downloading https://github.com/libsdl-org/SDL_ttf/archive/release-3.2.2.tar.gz -> libsdl-org-SDL_ttf-release-3.2.2.tar.gz
+Successfully downloaded libsdl-org-SDL_ttf-release-3.2.2.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/libsdl-org-SDL_ttf-release-3.2.2.tar.gz
+-- Applying patch link-sdl3.diff
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/sdl3-ttf/src/ease-3.2.2-37d6f7b748.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-ttf_x64-windows-static/lib/pkgconfig/sdl3-ttf.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-ttf_x64-windows-static/debug/lib/pkgconfig/sdl3-ttf.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-ttf_x64-windows-static/share/sdl3-ttf/usage
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sdl3-ttf_x64-windows-static/share/sdl3-ttf/copyright
+-- Performing post-build validation
+Starting submission of sdl3-ttf:x64-windows-static@3.2.2#1 to 1 binary cache(s) in the background
+Elapsed time to handle sdl3-ttf:x64-windows-static: 7.7 s
+sdl3-ttf:x64-windows-static package ABI: f16e66faecb9ce981055d509e57bc0f61949a49a2b4e7e179e9c4f8f8732986b
+Completed submission of freetype[brotli,bzip2,core,png,zlib]:x64-windows-static@2.13.3 to 1 binary cache(s) in 678 ms
+Installing 24/24 sqlite3[core,json1]:x64-windows-static@3.52.0...
+Building sqlite3[core,json1]:x64-windows-static@3.52.0...
+C:\Users\zubos\AppData\Local\vcpkg\registries\git-trees\623170f38740e06ec573ccfa1f501c5f4c320e54: info: installing from git registry git+https://github.com/microsoft/vcpkg@623170f38740e06ec573ccfa1f501c5f4c320e54
+Downloading https://sqlite.org/2026/sqlite-autoconf-3520000.tar.gz -> sqlite-autoconf-3520000.tar.gz
+Successfully downloaded sqlite-autoconf-3520000.tar.gz
+-- Extracting source C:/Users/zubos/AppData/Local/vcpkg/downloads/sqlite-autoconf-3520000.tar.gz
+-- Applying patch fix-arm-uwp.patch
+-- Applying patch add-config-include.patch
+-- Using source at C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/blds/sqlite3/src/nf-3520000-528cd6772c.clean
+-- Configuring x64-windows-static
+-- Building x64-windows-static-dbg
+-- Building x64-windows-static-rel
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sqlite3_x64-windows-static/lib/pkgconfig/sqlite3.pc
+-- Using cached msys2-mingw-w64-x86_64-pkgconf-1~2.4.3-1-any.pkg.tar.zst
+-- Using cached msys2-msys2-runtime-3.6.2-2-x86_64.pkg.tar.zst
+-- Using msys root at C:/Users/zubos/AppData/Local/vcpkg/downloads/tools/msys2/9272adbcaf19caef
+-- Fixing pkgconfig file: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sqlite3_x64-windows-static/debug/lib/pkgconfig/sqlite3.pc
+-- Installing: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/vcpkg/pkgs/sqlite3_x64-windows-static/share/sqlite3/usage
+-- Performing post-build validation
+Starting submission of sqlite3[core,json1]:x64-windows-static@3.52.0 to 1 binary cache(s) in the background
+Elapsed time to handle sqlite3:x64-windows-static: 20 s
+sqlite3:x64-windows-static package ABI: 3210b933e7eec35d2a0e6380fbd216e0adf76a05a7e3dca9a047e06296fd5876
+Installed contents are licensed to you by owners. Microsoft is not responsible for, nor does it grant any licenses to, third-party packages.
+Some packages did not declare an SPDX license. Check the `copyright` file for each package for more information about their licensing.
+Packages installed in this vcpkg installation declare the following licenses:
+(BSD-2-Clause OR BSD-3-Clause OR Artistic-1.0 OR GPL-2.0-only OR LGPL-2.0-only)
+(FTL OR GPL-2.0-or-later)
+Apache-2.0
+BSD-3-Clause
+LGPL-2.1-or-later
+MIT
+Zlib
+blessing
+bzip2-1.0.6
+libpng-2.0
+sdl3 provides CMake targets:
+
+  find_package(SDL3 CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE SDL3::SDL3)
+
+The package zlib is compatible with built-in CMake targets:
+
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(main PRIVATE ZLIB::ZLIB)
+
+sdl3-image provides CMake targets:
+
+  find_package(SDL3_image CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE $<IF:$<TARGET_EXISTS:SDL3_image::SDL3_image-shared>,SDL3_image::SDL3_image-shared,SDL3_image::SDL3_image-static>)
+
+sdl3-image provides pkg-config modules:
+
+  # image loading library for Simple DirectMedia Layer
+  sdl3-image
+
+sdl3-mixer provides CMake targets:
+
+    find_package(SDL3_mixer CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE $<IF:$<TARGET_EXISTS:SDL3_mixer::SDL3_mixer>,SDL3_mixer::SDL3_mixer,SDL3_mixer::SDL3_mixer-static>)
+
+sdl3-shadercross provides CMake targets:
+
+  find_package(SDL3_shadercross CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE SDL3_shadercross::SDL3_shadercross)
+
+sdl3-ttf provides CMake targets:
+
+  find_package(SDL3_ttf CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE SDL3_ttf::SDL3_ttf)
+
+sqlite3 provides pkgconfig bindings.
+sqlite3 provides CMake targets:
+
+    find_package(unofficial-sqlite3 CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE unofficial::sqlite3::sqlite3)
+
+Completed submission of sdl3-ttf:x64-windows-static@3.2.2#1 to 1 binary cache(s) in 120 ms
+Waiting for 1 remaining binary cache submissions...
+Completed submission of sqlite3[core,json1]:x64-windows-static@3.52.0 to 1 binary cache(s) in 808 ms (1/1)
+All requested installations completed successfully in: 6.8 min
+-- Running vcpkg install - done
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26300.
+-- The C compiler identification is MSVC 19.44.35229.0
+-- The CXX compiler identification is MSVC 19.44.35229.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- CataclysmBN build environment --
+-- Build realm is: Windows AMD64
+-- CataclysmBN build version is: c621aaf42f
+-- Could NOT find PkgConfig (missing: PKG_CONFIG_EXECUTABLE) 
+-- Found SQLite3: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/x64-windows-static/include (found version "3.52.0")
+-- Found ZLIB: optimized;C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/x64-windows-static/lib/zlib.lib;debug;C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/x64-windows-static/debug/lib/zlibd.lib (found version "1.3.1")
+-- Performing Test HAVE_STATIC_FLAG
+-- Performing Test HAVE_STATIC_FLAG - Failed
+-- CataclysmBN build options --
+-- Found Git: C:/Program Files/Git/mingw64/bin/git.exe (found version "2.55.0.windows.3")
+-- CMAKE_INSTALL_PREFIX          : C:/Program Files (x86)/CataclysmBN
+-- CMAKE_INSTALL_BINDIR          : .
+-- DESKTOP_ENTRY_PATH            : 
+-- PIXMAPS_ENTRY_PATH            : 
+-- PIXMAPS_UNITY_ENTRY_PATH      : 
+-- MANPAGE_ENTRY_PATH            : 
+-- GIT_BINARY                    : C:/Program Files/Git/mingw64/bin/git.exe
+-- DYNAMIC_LINKING               : False
+-- TILES                         : True
+-- DYNAMIC_ATLAS                 : ON
+-- CURSES                        : OFF
+-- SOUND                         : True
+-- BACKTRACE                     : ON
+-- LIBBACKTRACE                  : OFF
+-- USE_TRACY                     : OFF
+-- USE_XDG_DIR                   : OFF
+-- USE_HOME_DIR                  : OFF
+-- UNITY_BUILD                   : OFF
+-- LANGUAGES                     : all
+-- BUILD_SDL3                    : OFF
+-- BUILD_SHADERCROSS             : ON
+-- SHADER_TARGETS                : dxil;spirv;msl
+-- CATA_SDL                      : ON
+-- CATA_GPU_VERIFY               : OFF
+-- See CMake compiling guide for details and more info --
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Failed
+-- Looking for pthread_create in pthreads
+-- Looking for pthread_create in pthreads - not found
+-- Looking for pthread_create in pthread
+-- Looking for pthread_create in pthread - not found
+-- Found Threads: TRUE
+-- Searching for SDL3 library --
+Using system SDL3
+-- Searching for shadercross (HLSL compiler) --
+-- shadercross: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/x64-windows-static/tools/sdl3-shadercross/shadercross.exe
+-- Downloading Windows Lavapipe runtime: mesa3d-26.1.1-release-msvc.7z
+-- [download 0% complete]
+-- [download 1% complete]
+-- [download 2% complete]
+-- [download 3% complete]
+-- [download 4% complete]
+-- [download 5% complete]
+-- [download 6% complete]
+-- [download 7% complete]
+-- [download 8% complete]
+-- [download 9% complete]
+-- [download 10% complete]
+-- [download 11% complete]
+-- [download 12% complete]
+-- [download 13% complete]
+-- [download 14% complete]
+-- [download 15% complete]
+-- [download 16% complete]
+-- [download 17% complete]
+-- [download 18% complete]
+-- [download 19% complete]
+-- [download 20% complete]
+-- [download 21% complete]
+-- [download 22% complete]
+-- [download 23% complete]
+-- [download 24% complete]
+-- [download 25% complete]
+-- [download 26% complete]
+-- [download 27% complete]
+-- [download 28% complete]
+-- [download 29% complete]
+-- [download 30% complete]
+-- [download 31% complete]
+-- [download 32% complete]
+-- [download 33% complete]
+-- [download 34% complete]
+-- [download 35% complete]
+-- [download 36% complete]
+-- [download 37% complete]
+-- [download 38% complete]
+-- [download 39% complete]
+-- [download 40% complete]
+-- [download 41% complete]
+-- [download 42% complete]
+-- [download 43% complete]
+-- [download 44% complete]
+-- [download 45% complete]
+-- [download 46% complete]
+-- [download 47% complete]
+-- [download 48% complete]
+-- [download 49% complete]
+-- [download 50% complete]
+-- [download 51% complete]
+-- [download 52% complete]
+-- [download 53% complete]
+-- [download 54% complete]
+-- [download 55% complete]
+-- [download 56% complete]
+-- [download 57% complete]
+-- [download 58% complete]
+-- [download 59% complete]
+-- [download 60% complete]
+-- [download 61% complete]
+-- [download 62% complete]
+-- [download 63% complete]
+-- [download 64% complete]
+-- [download 65% complete]
+-- [download 66% complete]
+-- [download 67% complete]
+-- [download 68% complete]
+-- [download 69% complete]
+-- [download 70% complete]
+-- [download 71% complete]
+-- [download 72% complete]
+-- [download 73% complete]
+-- [download 74% complete]
+-- [download 75% complete]
+-- [download 76% complete]
+-- [download 77% complete]
+-- [download 78% complete]
+-- [download 79% complete]
+-- [download 80% complete]
+-- [download 81% complete]
+-- [download 82% complete]
+-- [download 83% complete]
+-- [download 84% complete]
+-- [download 85% complete]
+-- [download 86% complete]
+-- [download 87% complete]
+-- [download 88% complete]
+-- [download 89% complete]
+-- [download 90% complete]
+-- [download 91% complete]
+-- [download 92% complete]
+-- [download 93% complete]
+-- [download 94% complete]
+-- [download 95% complete]
+-- [download 96% complete]
+-- [download 97% complete]
+-- [download 98% complete]
+-- [download 99% complete]
+-- [download 100% complete]
+-- Extracting Windows Lavapipe runtime...
+-- Windows Lavapipe runtime: C:/games/Cataclysm-BN-coop-fork/build-data/mesa/x64
+-- Searching for SDL3_ttf library --
+-- Found BZip2: optimized;C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/x64-windows-static/lib/bz2.lib;debug;C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/x64-windows-static/debug/lib/bz2d.lib (found version "1.0.8")
+-- Looking for BZ2_bzCompressInit
+-- Looking for BZ2_bzCompressInit - found
+Using system SDL3_ttf
+-- Searching for SDL3_image library --
+-- Found JPEG: optimized;C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/x64-windows-static/lib/jpeg.lib;debug;C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc/vcpkg_installed/x64-windows-static/debug/lib/jpeg.lib (found version "62")
+Using system SDL3_image
+-- Searching for SDL3_mixer library --
+Using system SDL3_mixer
+-- Process LANGUAGES variable --
+
+
+
+-- Configuring done (494.1s)
+-- Generating done (0.5s)
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    LOCALIZE
+
+
+-- Build files have been written to: C:/games/Cataclysm-BN-coop-fork/out/build/windows-tiles-sounds-x64-msvc

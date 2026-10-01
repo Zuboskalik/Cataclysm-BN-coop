@@ -223,6 +223,8 @@ std::string io::enum_to_string<action_id>( action_id data )
             PAIR( ACTION_DISPLAY_TILES_NO_VFX )
             PAIR( ACTION_TOGGLE_HOUR_TIMER )
             PAIR( ACTION_SWAP_TO_NPC )
+            PAIR( ACTION_COOP_CHAT )
+            PAIR( ACTION_COOP_MENU )
         case NUM_ACTIONS:
             break;
     }
@@ -559,6 +561,10 @@ std::string action_ident( action_id act )
             return "null";
         case ACTION_SWAP_TO_NPC:
             return "SWAPTONPC";
+        case ACTION_COOP_CHAT:
+            return "coop_chat";
+        case ACTION_COOP_MENU:
+            return "coop_menu";
         default:
             return "unknown";
     }
@@ -635,6 +641,8 @@ bool can_action_change_worldstate( const action_id act )
         case ACTION_TOGGLE_AUTO_PULP_BUTCHER:
         case ACTION_TOGGLE_AUTO_MINING:
         case ACTION_TOGGLE_AUTO_FORAGING:
+        case ACTION_COOP_CHAT:
+        case ACTION_COOP_MENU:
             return false;
         default:
             return true;

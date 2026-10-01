@@ -1,4 +1,5 @@
 #include "start_location.h"
+#include "mp_session.h"
 
 #include "avatar.h"
 #include "bodypart.h"
@@ -332,6 +333,11 @@ void start_location::place_player( player &u, const int &z ) const
     map &m = g->m;
     // Start us off somewhere in the center of the map
     u.setpos( tripoint_bub_ms( g_half_mapsize_x, g_half_mapsize_y, z ) );
+    // A co-op client is moved next to the host as soon as the first state
+    // arrives; its local terrain is blank, so there is nothing to search.
+    if( cata_mp::suppress_world_simulation() ) {
+        return;
+    }
     m.invalidate_map_cache( z );
     m.build_map_cache( z );
     const bool must_be_inside = !flags().contains( "ALLOW_OUTSIDE" );
@@ -384,6 +390,8 @@ void start_location::place_player( player &u, const int &z ) const
         }
     }
 
+    // A co-op client starts on blank placeholder terrain and is moved next to
+    // the host as soon as the first state arrives.
     if( !found_good_spot ) {
         debugmsg( "Could not find a good starting place for character" );
     }

@@ -1,4 +1,5 @@
 #include "mission.h"
+#include "mp_session.h"
 
 #include "avatar.h"
 #include "catalua_hooks.h"
@@ -84,7 +85,10 @@ mission *mission::find( int id )
     if( iter != world_missions.end() ) {
         return &iter->second;
     }
-    debugmsg( "requested mission with uid %d does not exist", id );
+    // Characters mirrored from a co-op host refer to the host's missions.
+    if( !cata_mp::is_client() ) {
+        debugmsg( "requested mission with uid %d does not exist", id );
+    }
     return nullptr;
 }
 

@@ -40,6 +40,7 @@
 #include "make_static.h"
 #include "map/legacy_pathfinding.h"
 #include "map/map.h"
+#include "json.h"
 #include "map_memory.h"
 #include "martialarts.h"
 #include "messages.h"
@@ -231,6 +232,23 @@ void avatar::toggle_map_memory()
 bool avatar::should_show_map_memory()
 {
     return show_map_memory;
+}
+
+void avatar::mp_mirror_load( JsonIn &jsin )
+{
+    JsonObject data = jsin.get_object();
+    data.allow_omitted_members();
+    // Same reset game::load() performs before reading a save, but the map
+    // memory is ours: the host does not know what we have seen.
+    std::unique_ptr<map_memory> memory = std::move( player_map_memory );
+    const bool show_memory = show_map_memory;
+    const std::string keep_save_id = save_id;
+    *this = avatar();
+    player_map_memory = std::move( memory );
+    show_map_memory = show_memory;
+    save_id = keep_save_id;
+    player::load( data );
+    recalc_sight_limits();
 }
 
 bool avatar::save_map_memory()

@@ -363,6 +363,10 @@ enum action_id : int {
     ACTION_TOGGLE_HOUR_TIMER,
     /** Swap to an NPC in faction menu **/
     ACTION_SWAP_TO_NPC,
+    /** Co-op: chat with the other players */
+    ACTION_COOP_CHAT,
+    /** Co-op: session menu (status, addresses, leave/kick) */
+    ACTION_COOP_MENU,
     /** Not an action, serves as count of enumerated actions */
     NUM_ACTIONS
     /**@}*/

@@ -113,6 +113,7 @@
 #include "monexamine.h"
 #include "monfaction.h"
 #include "monster.h"
+#include "mp_session.h"
 #include "monster_action.h"
 #include "monster_hallucination.h"
 #include "monster_plan.h"
@@ -1328,6 +1329,10 @@ static auto place_npc_on_absolute_mapbuffer( npc &who, mapbuffer &buffer ) -> bo
 void game::load_npcs()
 {
     ZoneScoped;
+    // A co-op client only shows the characters the host sends it.
+    if( cata_mp::suppress_world_simulation() ) {
+        return;
+    }
     const int radius = g_half_mapsize;
     // uses submap coordinates
     std::vector<shared_ptr_fast<npc>> just_added;
@@ -1563,6 +1568,8 @@ static std::string generate_memorial_filename( const std::string &char_name )
 
 bool game::cleanup_at_end()
 {
+    // Tell co-op partners before any blocking death/quit screens.
+    cata_mp::host_died();
     if( uquit == QUIT_DIED || uquit == QUIT_SUICIDE ) {
         // Put (non-hallucinations) into the overmap so they are not lost.
         for( monster &critter : all_monsters() ) {
@@ -2023,6 +2030,15 @@ bool game::do_turn()
             return cleanup_at_end();
         }
     }
+    // Co-op: open the listener when hosting was armed, service the network,
+    // and let a client run its own (non-simulating) loop instead of a turn.
+    cata_mp::on_turn_start();
+    if( cata_mp::is_client() ) {
+        if( cata_mp::client_do_turn() && is_game_over() ) {
+            return cleanup_at_end();
+        }
+        return false;
+    }
     if( try_activity_fixed_window_skip() ) {
         return false;
     }
@@ -2031,7 +2047,9 @@ bool game::do_turn()
                          get_option<bool>( "SLEEP_SKIP_VEH" );
     const auto soundperf = asleep && get_option<bool>( "SLEEP_SKIP_SOUND" );
     const auto monperf = asleep && get_option<bool>( "SLEEP_SKIP_MON" );
-    const auto npcperf = asleep && get_option<bool>( "SLEEP_SKIP_NPC" );
+    // Co-op: remote players' proxies must keep taking their own turns.
+    const auto npcperf = asleep && get_option<bool>( "SLEEP_SKIP_NPC" ) &&
+                         !cata_mp::suppress_time_skipping();
     {
         ZoneScopedN( "do_turn_population_plots" );
         TracyPlot( "Total Monsters", static_cast<int64_t>( critter_tracker->size() ) );
@@ -2201,6 +2219,9 @@ bool game::do_turn()
                 }
                 if( handled_action ) {
                     ++moves_since_last_save;
+                }
+                if( handled_action || u.moves != moves_before_action ) {
+                    cata_mp::host_after_player_action();
                 }
 
                 if( !soundperf && u.moves != moves_before_action ) {
@@ -2460,6 +2481,7 @@ bool game::do_turn()
         Pathfinding::clear_d_maps();
     }
 
+    cata_mp::host_end_of_turn();
     return false;
 }
 
@@ -3016,6 +3038,10 @@ auto game::run_activity_cadence_boundary() -> void
 auto game::try_activity_fixed_window_skip() -> bool
 {
     ZoneScopedN( "activity_fixed_window_try" );
+    // Skipping a window of turns would skip remote players' turns as well.
+    if( cata_mp::suppress_time_skipping() ) {
+        return false;
+    }
     if( activity_fixed_window_force_normal_turn_ ) {
         activity_fixed_window_force_normal_turn_ = false;
         if( log_activity_skip_state ) {
@@ -3669,6 +3695,8 @@ input_context get_default_mode_input_context()
     ctxt.register_action( "scores" );
     ctxt.register_action( "morale" );
     ctxt.register_action( "messages" );
+    ctxt.register_action( "coop_chat" );
+    ctxt.register_action( "coop_menu" );
     ctxt.register_action( "help" );
     ctxt.register_action( "HELP_KEYBINDINGS" );
     ctxt.register_action( "open_options" );
@@ -3845,6 +3873,11 @@ bool game::try_get_right_click_action( action_id &act, const tripoint_bub_ms &mo
 
 bool game::is_game_over()
 {
+    // A co-op client's character lives on the host; the client only stops
+    // when it leaves the session.
+    if( cata_mp::is_client() ) {
+        return uquit != QUIT_NO;
+    }
     if( uquit == QUIT_WATCH ) {
         // deny player movement and dodging
         u.moves = 0;
@@ -6805,6 +6838,13 @@ void game::npcmove()
                 guy.process_turn();
                 guy.process_items();
             }
+        }
+        // Co-op: a remote player's proxy acts on that player's input, not AI.
+        if( cata_mp::host_proxy_turn( guy ) ) {
+            if( !guy.is_dead() ) {
+                guy.npc_update_body();
+            }
+            continue;
         }
         while( !guy.is_dead() && guy.moves > 0 && turns < 10 &&
                ( !guy.in_sleep_state() || guy.activity->id() == ACT_OPERATION )
@@ -14011,6 +14051,10 @@ void game::resize_reality_bubble()
 
 void game::update_performance_bubble()
 {
+    // Shrinking the bubble could unload remote players' proxies.
+    if( cata_mp::suppress_time_skipping() ) {
+        return;
+    }
     const int normal_size      = get_option<int>( "REALITY_BUBBLE_SIZE" );
     const int mobile_size      = get_option<int>( "ACTIVITY_MOBILE_BUBBLE_SIZE" );
     const int idle_size        = get_option<int>( "ACTIVITY_IDLE_BUBBLE_SIZE" );
@@ -15430,6 +15474,10 @@ auto game::update_map( const tripoint_abs_ms &center ) -> point_rel_sm
                 ( *it )->bub_pos().y() < 0 - SEEY * npc_despawn_margin_sm ||
                 ( *it )->bub_pos().x() > SEEX * ( g_mapsize + npc_despawn_margin_sm ) ||
                 ( *it )->bub_pos().y() > SEEY * ( g_mapsize + npc_despawn_margin_sm ) ) {
+                if( cata_mp::host_keep_proxy_in_bubble( **it ) ) {
+                    it++;
+                    continue;
+                }
                 //Remove the npc from the active list. It remains in the overmap list.
                 ( *it )->get_mapbuffer().remove_active_npc( **it );
                 ( *it )->on_unload();
@@ -16101,6 +16149,9 @@ void game::quickload()
 
 void game::autosave()
 {
+    if( cata_mp::suppress_world_simulation() ) {
+        return;
+    }
     //Don't autosave if the min-autosave interval has not passed since the last autosave/quicksave.
     if( time( nullptr ) < last_save_timestamp + 60 * get_option<int>( "AUTOSAVE_MINUTES" ) ) {
         return;

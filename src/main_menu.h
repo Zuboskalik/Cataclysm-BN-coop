@@ -32,6 +32,7 @@ class main_menu
         std::vector<std::string> vNewGameHints;
         std::vector<char> vWorldHotkeys;
         std::vector<std::string> vSettingsSubItems;
+        std::vector<std::string> vCoopSubItems;
         std::vector< std::vector<std::string> > vSettingsHotkeys;
         std::vector< std::vector<std::string> > vMenuHotkeys; // hotkeys for the vMenuItems
         std::vector< std::vector<std::string> > vNewGameHotkeys;
@@ -57,6 +58,8 @@ class main_menu
         bool new_character_tab();
         bool load_character_tab( const std::string &worldname );
         void world_tab( const std::string &worldname );
+        // Co-op multiplayer tab: host a new/saved game or join one by IP.
+        bool coop_tab();
 
         /*
          * Load character templates from template folder

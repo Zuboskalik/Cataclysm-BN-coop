@@ -2316,6 +2316,20 @@
   },
   {
     "type": "keybinding",
+    "name": "Co-op Chat",
+    "category": "DEFAULTMODE",
+    "id": "coop_chat",
+    "bindings": [ { "input_method": "keyboard", "key": "N" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "Co-op Menu",
+    "category": "DEFAULTMODE",
+    "id": "coop_menu",
+    "bindings": [ { "input_method": "keyboard", "key": "Z" } ]
+  },
+  {
+    "type": "keybinding",
     "name": "Open Wiki",
     "category": "DEFAULTMODE",
     "id": "open_wiki",

@@ -29,6 +29,7 @@
 #include "messages.h"
 #include "mongroup.h"
 #include "monster.h"
+#include "mp_session.h"
 #include "mtype.h"
 #include "npc.h"
 #include "options.h"
@@ -1125,6 +1126,38 @@ auto mapbuffer::add_submap(const tripoint_abs_sm& p, std::unique_ptr<submap>& sm
         });
 
     return true;
+}
+
+auto mapbuffer::mp_load_submaps(
+    JsonIn& jsin, const std::function<void(const tripoint_abs_sm&, submap&)>& before_replace)
+    -> std::vector<tripoint_abs_sm> {
+    std::vector<std::pair<tripoint_abs_sm, std::unique_ptr<submap>>> loaded;
+    deserialize_into_vec(jsin, loaded, nullptr);
+    std::vector<tripoint_abs_sm> stored;
+    stored.reserve(loaded.size());
+    auto lk = std::lock_guard<std::recursive_mutex>(submaps_mutex_);
+    for (auto& [pos, sm] : loaded) {
+        if (!sm) { continue; }
+        const auto it = submaps.find(pos);
+        if (it != submaps.end()) {
+            if (before_replace && it->second) { before_replace(pos, *it->second); }
+            unregister_submap_vehicles(pos);
+            submaps_with_active_items_.erase(pos);
+            submaps_with_luminous_items_.erase(pos);
+            it->second = std::move(sm);
+            register_submap_vehicles(pos, *it->second);
+            if (!it->second->active_items.empty()) { submaps_with_active_items_.insert(pos); }
+            refresh_luminous_item_submap_index(
+                pos,
+                {
+                    .mode = mapbuffer_lookup_mode::resident_only,
+                });
+        } else {
+            add_submap(pos, sm);
+        }
+        stored.push_back(pos);
+    }
+    return stored;
 }
 
 void mapbuffer::remove_submap(tripoint_abs_sm addr) {
@@ -3345,6 +3378,18 @@ auto mapbuffer::generate_omt(
         && lookup_submap_in_memory(base + point_south)
         && lookup_submap_in_memory(base + point_south_east);
     if (all_loaded) { return {}; }
+
+    // A co-op client never generates terrain: everything real comes from the
+    // host.  Areas the host has not sent are left as blank placeholders.
+    if (cata_mp::suppress_world_simulation()) {
+        const auto generated = add_uniform_omt(*this, base, base.z() > 0 ? t_open_air : t_null);
+        if (generated) { cata_mp::client_placeholder_created(base); }
+        return {
+            .status =
+                generated ? mapgen_result_status::generated : mapgen_result_status::not_generated,
+            .selected_mapgen = nullptr,
+        };
+    }
 
     if (const auto uniform_terrain = uniform_terrain_for_omt(dimension_id_, omt_addr)) {
         ZoneScopedN("mapbuffer_generate_uniform_omt");

@@ -395,6 +395,18 @@ public:
     auto add_submap(const tripoint_abs_sm& p, std::unique_ptr<submap>& sm) -> bool;
 
     /**
+     * Co-op client: reads an array of submaps in the map save format and
+     * stores them, replacing any resident submap at the same position.
+     * Replaced submaps are freed, so the caller must reload its map grid
+     * (map::load) before anything touches it again.
+     * @return The positions that were stored.
+     */
+    auto mp_load_submaps(
+        JsonIn& jsin,
+        const std::function<void(const tripoint_abs_sm&, submap&)>& before_replace = nullptr)
+        -> std::vector<tripoint_abs_sm>;
+
+    /**
      * Absolute submap lookup with explicit residency/loading policy.
      * Defaults to simulated_only so ordinary callers only see active
      * simulation data unless they explicitly request broader residency.

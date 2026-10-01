@@ -52,7 +52,9 @@ No need to force /TLBID:1 because is default
 
 # Path has changed, so this configure run will find cl.exe
 # CMP0141 is set before project() in CMakeLists.txt so this variable is honored.
-set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "Embedded")
+# Release objects carry no debug info: with /Z7 the static object library of
+# the Visual Studio generator grows past the 4 GiB lib.exe limit (LNK1248).
+set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>")
 set(CMAKE_C_COMPILER   cl.exe)
 set(CMAKE_CXX_COMPILER ${CMAKE_C_COMPILER})
 set(CMAKE_CXX_FLAGS_INIT "\

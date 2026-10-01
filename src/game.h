@@ -172,6 +172,9 @@ class game : public submap_load_listener
         friend class editmap;
         friend class advanced_inventory;
         friend class main_menu;
+        // Co-op multiplayer (mp_host.cpp / mp_client.cpp)
+        friend struct mp_game_access;
+        friend struct mp_client_game_access;
         friend distribution_grid_tracker &get_distribution_grid_tracker();
         friend auto get_distribution_grid_tracker_for(
             const dimension_id & ) -> distribution_grid_tracker *;

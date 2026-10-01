@@ -1,4 +1,5 @@
 #include "main_menu.h"
+#include "mp_session.h"
 
 #include "auto_pickup.h"
 #include "avatar.h"
@@ -56,12 +57,13 @@ enum class main_menu_opts : int {
     NEWCHAR = 1,
     LOADCHAR = 2,
     WORLD = 3,
-    SETTINGS = 4,
-    HELP = 5,
-    CREDITS = 6,
-    QUIT = 7
+    COOP = 4,
+    SETTINGS = 5,
+    HELP = 6,
+    CREDITS = 7,
+    QUIT = 8
 };
-static constexpr int max_menu_opts = 7;
+static constexpr int max_menu_opts = 8;
 
 static int getopt( main_menu_opts o )
 {
@@ -200,6 +202,16 @@ void main_menu::display_sub_menu( int sel, const point &bottom_left, int sel_lin
                 nc_color clr = i == sel2 ? hilite( c_yellow ) : c_yellow;
                 sub_opts.push_back( shortcut_text( clr, vSettingsSubItems[i] ) );
                 int len = utf8_width( shortcut_text( clr, vSettingsSubItems[i] ), true );
+                if( len > xlen ) {
+                    xlen = len;
+                }
+            }
+            break;
+        case main_menu_opts::COOP:
+            for( int i = 0; static_cast<size_t>( i ) < vCoopSubItems.size(); ++i ) {
+                nc_color clr = i == sel2 ? hilite( c_yellow ) : c_yellow;
+                sub_opts.push_back( colorize( vCoopSubItems[i], clr ) );
+                int len = utf8_width( sub_opts.back(), true );
                 if( len > xlen ) {
                     xlen = len;
                 }
@@ -489,6 +501,7 @@ void main_menu::init_strings()
     vMenuItems.emplace_back( pgettext( "Main Menu", "<N|n>ew Game" ) );
     vMenuItems.emplace_back( pgettext( "Main Menu", "Lo<a|A>d" ) );
     vMenuItems.emplace_back( pgettext( "Main Menu", "<W|w>orld" ) );
+    vMenuItems.emplace_back( pgettext( "Main Menu", "C<o|O>-op" ) );
     vMenuItems.emplace_back( pgettext( "Main Menu", "Se<t|T>tings" ) );
     vMenuItems.emplace_back( pgettext( "Main Menu", "H<e|E|?>lp" ) );
     vMenuItems.emplace_back( pgettext( "Main Menu", "<C|c>redits" ) );
@@ -546,6 +559,12 @@ void main_menu::init_strings()
     vWorldSubItems.emplace_back( pgettext( "Main Menu|World", "<= Return" ) );
 
     vWorldHotkeys = { 'm', 'e', 's', 't', 'r', 'd', 'f', 'q' };
+
+    vCoopSubItems.clear();
+    vCoopSubItems.emplace_back( pgettext( "Main Menu|Co-op", "Host a new game" ) );
+    vCoopSubItems.emplace_back( pgettext( "Main Menu|Co-op", "Host a saved game" ) );
+    vCoopSubItems.emplace_back( pgettext( "Main Menu|Co-op", "Join a game by IP address" ) );
+    vCoopSubItems.emplace_back( pgettext( "Main Menu|Co-op", "Hosting settings (port, password)" ) );
 
     vSettingsSubItems.clear();
     vSettingsSubItems.emplace_back( pgettext( "Main Menu|Settings", "<O|o>ptions" ) );
@@ -807,6 +826,9 @@ bool main_menu::opening_screen()
                 case main_menu_opts::SETTINGS:
                     max_item_count = vSettingsSubItems.size();
                     break;
+                case main_menu_opts::COOP:
+                    max_item_count = vCoopSubItems.size();
+                    break;
                 case main_menu_opts::HELP:
                 case main_menu_opts::QUIT:
                 default:
@@ -865,6 +887,12 @@ bool main_menu::opening_screen()
                 case main_menu_opts::NEWCHAR:
                     start = new_character_tab();
                     if( start ) {
+                        start_new = true;
+                    }
+                    break;
+                case main_menu_opts::COOP:
+                    start = coop_tab();
+                    if( start && cata_mp::host_armed() && sel2 == 0 ) {
                         start_new = true;
                     }
                     break;
@@ -1067,6 +1095,76 @@ bool main_menu::load_character_tab( const std::string &worldname )
     }
 
     return false;
+}
+
+bool main_menu::coop_tab()
+{
+    switch( sel2 ) {
+        case 0: {
+            // Host a new game: regular "Custom Character" flow, then listen.
+            if( !cata_mp::configure_host() ) {
+                return false;
+            }
+            uilist type_menu;
+            type_menu.title = _( "Character for the host" );
+            type_menu.addentry( 0, true, 'u', _( "Custom character" ) );
+            type_menu.addentry( 2, true, 'r', _( "Random character" ) );
+            type_menu.addentry( 3, true, 'd', _( "Play now (random character, default scenario)" ) );
+            type_menu.addentry( 4, true, 'n', _( "Play now (random character and scenario)" ) );
+            type_menu.query();
+            if( type_menu.ret < 0 ) {
+                return false;
+            }
+            cata_mp::arm_host();
+            const int saved_sel2 = sel2;
+            sel2 = type_menu.ret;
+            const bool started = new_character_tab();
+            sel2 = saved_sel2;
+            if( !started ) {
+                cata_mp::disarm_host();
+            }
+            return started;
+        }
+        case 1: {
+            std::vector<std::string> worlds;
+            for( const std::string &name : world_generator->all_worldnames() ) {
+                const WORLDINFO *w = world_generator->get_world( name );
+                if( w != nullptr && !w->world_saves.empty() ) {
+                    worlds.push_back( name );
+                }
+            }
+            if( worlds.empty() ) {
+                on_error();
+                popup( _( "There is no saved game to host." ) );
+                return false;
+            }
+            uilist menu;
+            menu.title = _( "Host which world?" );
+            for( size_t i = 0; i < worlds.size(); ++i ) {
+                menu.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, worlds[i] );
+            }
+            menu.query();
+            if( menu.ret < 0 || static_cast<size_t>( menu.ret ) >= worlds.size() ) {
+                return false;
+            }
+            if( !cata_mp::configure_host() ) {
+                return false;
+            }
+            cata_mp::arm_host();
+            const bool started = load_character_tab( worlds[menu.ret] );
+            if( !started ) {
+                cata_mp::disarm_host();
+            }
+            return started;
+        }
+        case 2:
+            return cata_mp::join_game();
+        case 3:
+            cata_mp::configure_host();
+            return false;
+        default:
+            return false;
+    }
 }
 
 void main_menu::world_tab( const std::string &worldname )

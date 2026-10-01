@@ -59,6 +59,7 @@
 #include "mapsharing.h"
 #include "messages.h"
 #include "monster.h"
+#include "mp_session.h"
 #include "mtype.h"
 #include "mutation.h"
 #include "mutation_ui.h"
@@ -473,8 +474,17 @@ input_context game::get_player_input( std::string &action )
                 //       (update only part of the screen? draw static parts into a texture?)
                 invalidate_main_ui_adaptor();
             }
+            // Co-op: keep the network serviced while waiting for a key.
+            const auto coop_active = cata_mp::active();
+            if( coop_active && cata_mp::pump() ) {
+                invalidate_main_ui_adaptor();
+            }
+            if( cata_mp::input_should_return() ) {
+                action = "TIMEOUT";
+                break;
+            }
             const auto needs_timed_poll = realtime_turns || animate_weather || animate_sct ||
-                                          needs_map_animation || uquit == QUIT_WATCH;
+                                          needs_map_animation || uquit == QUIT_WATCH || coop_active;
             TracyPlot( "Input Timed Polling", static_cast<int64_t>( needs_timed_poll ? 1 : 0 ) );
 
             std::unique_ptr<static_popup> deathcam_msg_popup;
@@ -493,7 +503,7 @@ input_context game::get_player_input( std::string &action )
             {
                 ZoneScopedN( "get_player_input_handle_mouseview" );
                 if( needs_timed_poll ) {
-                    ctxt.set_timeout( 125 );
+                    ctxt.set_timeout( coop_active ? 50 : 125 );
                 } else {
                     ctxt.reset_timeout();
                 }
@@ -514,9 +524,17 @@ input_context game::get_player_input( std::string &action )
         }
         SCT.vSCT.clear();
 
-        if( realtime_turns || uquit == QUIT_WATCH ) {
-            ctxt.set_timeout( 125 );
+        if( realtime_turns || uquit == QUIT_WATCH || cata_mp::active() ) {
+            ctxt.set_timeout( cata_mp::active() ? 50 : 125 );
             while( true ) {
+                if( cata_mp::active() && cata_mp::pump() ) {
+                    invalidate_main_ui_adaptor();
+                    ui_manager::redraw_invalidated();
+                }
+                if( cata_mp::input_should_return() ) {
+                    action = "TIMEOUT";
+                    break;
+                }
                 auto keep_waiting = false;
                 {
                     ZoneScopedN( "get_player_input_noanim_handle_mouseview" );
@@ -2084,6 +2102,12 @@ bool game::handle_action()
         gamemode->pre_action( act );
     }
 
+    // Co-op: a client sends game actions to the host instead of running them,
+    // and a host must not run actions that would break the session.
+    if( cata_mp::client_intercept_action( act, mouse_target ) || cata_mp::host_blocks_action( act ) ) {
+        return false;
+    }
+
     int soffset = 0;
     {
         ZoneScopedN( "handle_action_move_view_option" );
@@ -2845,6 +2869,14 @@ bool game::handle_action()
                         uquit = QUIT_SUICIDE;
                     }
                 }
+                break;
+
+            case ACTION_COOP_CHAT:
+                cata_mp::open_chat();
+                break;
+
+            case ACTION_COOP_MENU:
+                cata_mp::open_menu();
                 break;
 
             case ACTION_SAVE:
