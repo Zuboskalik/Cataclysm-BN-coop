@@ -801,7 +801,9 @@ action_result do_move( npc &guy, int dx, int dy )
         const bool can_swap = critter->is_monster() ? critter->as_monster()->is_pet() :
                               ( !critter->as_character()->in_sleep_state() || is_proxy( *critter->as_character() ) );
         if( can_swap && here.passable( guy.bub_pos() ) ) {
-            const std::string other = critter->disp_name( false, true );
+            // disp_name() of the host's avatar is "you".
+            const std::string other = critter->is_avatar() ? critter->as_avatar()->get_name() :
+                                      critter->disp_name( false, true );
             if( g->swap_critters( guy, *critter ) ) {
                 guy.mod_moves( -100 );
                 guy.add_msg_if_player( _( "You swap places with %s." ), other );
@@ -1443,6 +1445,7 @@ action_result execute( peer_t &p, npc &guy, message &m )
 bool wait_for_action( int peer_id )
 {
     const int64_t started = net::now_ms();
+    int64_t last_turn_sent = started;
     std::unique_ptr<static_popup> notice;
     input_context ctxt( "COOP_WAIT" );
     ctxt.register_action( "QUIT" );
@@ -1455,6 +1458,12 @@ bool wait_for_action( int peer_id )
         }
         if( p->action ) {
             return true;
+        }
+        // Remind the client now and then: if it lost track of whose turn it
+        // is, this gets both sides moving again instead of waiting forever.
+        if( net::now_ms() - last_turn_sent > 5000 ) {
+            send( peer_id, "{\"t\":\"turn\"}" );
+            last_turn_sent = net::now_ms();
         }
         if( !notice && net::now_ms() - started > 400 ) {
             notice = std::make_unique<static_popup>();

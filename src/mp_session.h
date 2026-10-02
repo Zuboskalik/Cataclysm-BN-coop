@@ -13,6 +13,7 @@
 // requests for the host.  See doc/COOP.md for the protocol.
 
 #include <optional>
+#include <cstdint>
 #include <string>
 
 #include "action.h"
@@ -21,6 +22,7 @@
 class Character;
 class JsonIn;
 class main_menu;
+class monster;
 class npc;
 struct game_message_params;
 
@@ -97,6 +99,8 @@ bool suppress_world_simulation();
 // Client: the mapbuffer stubbed out an OMT (4 submaps starting at `base`)
 // because the host has not sent it yet.
 void client_placeholder_created( const tripoint_abs_sm &base );
+// Seed for picking the monster's sprite variant; the same on host and client.
+uintptr_t monster_sprite_seed( const monster &mon );
 // Host: features that skip turns in bulk would skip remote players' turns too.
 bool suppress_time_skipping();
 

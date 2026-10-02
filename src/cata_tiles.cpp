@@ -41,6 +41,7 @@
 #    include "map_memory.h"
 #    include "mod_tileset.h"
 #    include "monster.h"
+#    include "mp_session.h"
 #    include "monstergenerator.h"
 #    include "mtype.h"
 #    include "npc.h"
@@ -4647,7 +4648,10 @@ bool cata_tiles::draw_from_id_string(
         case C_MONSTER:
             // FIXME: add persistent id to Creature type, instead of using monster pointer address
             if( !monster_override.contains( pos ) ) {
-                seed = reinterpret_cast<uintptr_t>( g->critter_at<monster>( tripoint_bub_ms( pos ) ) );
+                if( const monster *const mon = g->critter_at<monster>( tripoint_bub_ms( pos ) ) ) {
+                    // Co-op: the host's and the client's copies must look alike.
+                    seed = cata_mp::monster_sprite_seed( *mon );
+                }
             }
             break;
         default:

@@ -13,6 +13,7 @@
 #include <set>
 #include <sstream>
 #include <thread>
+#include <unordered_map>
 
 #include "avatar.h"
 #include "calendar.h"
@@ -306,6 +307,21 @@ void remember_address()
 
 // ---- applying host state ----------------------------------------------------
 
+// Tilesets pick a monster's sprite variant from a per-monster seed, which is
+// the monster's address.  Ours differ from the host's, so draw our copies with
+// the host's address (the key the host sends them under) to look the same.
+std::unordered_map<const monster *, uintptr_t> monster_seeds;
+
+void rebuild_monster_seeds()
+{
+    monster_seeds.clear();
+    for( const auto &[key, mon] : S.monsters ) {
+        if( mon ) {
+            monster_seeds[mon.get()] = static_cast<uintptr_t>( std::strtoull( key.c_str(), nullptr, 10 ) );
+        }
+    }
+}
+
 void remove_all_monsters()
 {
     for( auto &[key, mon] : S.monsters ) {
@@ -315,6 +331,7 @@ void remove_all_monsters()
     }
     S.monsters.clear();
     g->clear_zombies();
+    rebuild_monster_seeds();
 }
 
 void remove_npc( int id )
@@ -491,6 +508,7 @@ void apply_state( message &m )
             }
         }
     }
+    rebuild_monster_seeds();
 
     // ---- other characters
     if( jo.has_int( "host_id" ) ) {
@@ -509,17 +527,22 @@ void apply_state( message &m )
     if( jo.has_array( "npc_keys" ) && jo.has_member( "npc" ) ) {
         std::vector<int> keys;
         jo.read( "npc_keys", keys );
+        std::vector<std::pair<int, shared_ptr_fast<npc>>> incoming;
         JsonIn &ji = *jo.get_raw( "npc" );
         ji.start_array();
-        size_t i = 0;
         while( !ji.end_array() ) {
             shared_ptr_fast<npc> guy = make_shared_fast<npc>();
             guy->deserialize( ji );
-            if( i >= keys.size() ) {
-                break;
+            if( incoming.size() < keys.size() ) {
+                incoming.emplace_back( keys[incoming.size()], guy );
             }
-            const int key = keys[i++];
-            remove_npc( key );
+        }
+        // As with monsters: take all updated characters off the map first, so
+        // two that traded places don't land on each other.
+        for( const auto &entry : incoming ) {
+            remove_npc( entry.first );
+        }
+        for( const auto &[key, guy] : incoming ) {
             guy->setID( character_id( key ), true );
             guy->set_dimension( u.get_dimension() );
             if( key == S.host_id ) {
@@ -528,6 +551,9 @@ void apply_state( message &m )
             const tripoint_bub_ms pos = abs_to_bub( guy->abs_pos() );
             if( !here.inbounds( pos ) ) {
                 continue;
+            }
+            if( const npc *stale = g->critter_at<npc>( pos, true ) ) {
+                remove_npc( stale->getID().get_value() );
             }
             mp_client_game_access::add_active_npc( *g, guy );
             S.npc_ids.insert( key );
@@ -1402,6 +1428,17 @@ bool input_should_return()
 
 namespace cata_mp
 {
+uintptr_t monster_sprite_seed( const monster &mon )
+{
+    if( is_client() ) {
+        const auto it = client::monster_seeds.find( &mon );
+        if( it != client::monster_seeds.end() ) {
+            return it->second;
+        }
+    }
+    return reinterpret_cast<uintptr_t>( &mon );
+}
+
 void client_placeholder_created( const tripoint_abs_sm &base )
 {
     if( !is_client() ) {
