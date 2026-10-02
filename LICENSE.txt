@@ -18,6 +18,8 @@ Lua (src/lua/*) is licensed under the MIT license, see src_lua/LICENSE.md for te
 
 sol2 (src/sol/*) is licensed under the MIT license, see src/sol/sol.hpp for text of license.
 
+Asio (src/third-party/asio/*) is licensed under the Boost Software License 1.0. Visit http://www.boost.org/LICENSE_1_0.txt to read the license.
+
 fmtlib (src/fmtlib_*) is licensed under the MIT license (https://github.com/fmtlib/fmt/blob/master/LICENSE.rst). The full license text is as follows:
 
 # Copyright (c) 2012 - present, Victor Zverovich

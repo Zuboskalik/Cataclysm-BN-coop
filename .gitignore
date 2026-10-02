@@ -246,3 +246,8 @@ clang-tidy-trace
 CMakeFiles/
 CMakeCache.txt
 __cmake_systeminformation/
+
+# Local co-op build helper output
+out-build.log
+out-configure.log
+build-status.txt

@@ -68,8 +68,7 @@ void netlog( const std::string &what )
     static std::mutex m;
     std::lock_guard<std::mutex> lk( m );
     if( FILE *f = std::fopen( path, "a" ) ) {
-        std::fprintf( f, "%lld %s
-", static_cast<long long>( std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::fprintf( f, "%lld %s\n", static_cast<long long>( std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::steady_clock::now().time_since_epoch() ).count() ), what.c_str() );
         std::fclose( f );
     }
