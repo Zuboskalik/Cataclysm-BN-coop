@@ -445,6 +445,9 @@ public:
     auto creature_tracker() const -> const Creature_tracker&;
     auto add_active_npc(const shared_ptr_fast<npc>& guy) -> bool;
     auto update_active_npc_pos(const npc& guy, const tripoint_abs_ms& new_pos) -> bool;
+    /// Two active NPCs trade places: swap their location entries first so
+    /// that moving either one does not find the other in its way.
+    auto swap_active_npc_positions(const npc& a, const npc& b) -> void;
     auto remove_active_npc(const npc& guy) -> void;
     auto find_active_npc(const tripoint_abs_ms& p) const -> shared_ptr_fast<npc>;
     auto creature_at(const tripoint_abs_ms& p, bool allow_hallucination = false) const

@@ -21,6 +21,7 @@
 #include "map/submap.h"
 #include "map_iterator.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "monfaction.h"
 #include "monster.h"
 #include "mtype.h"
@@ -2411,6 +2412,28 @@ static bool describe_sound( sounds::sound_t category, bool from_player_position 
     return true;
 }
 
+// A co-op player's character is an NPC on the host; tell the remote player
+// what it hears the way the local player is told.
+static void describe_sound_to_proxy( const npc &who, const sound_event &sound )
+{
+    if( sound.origin == who.bub_pos() || !describe_sound( sound.category, false ) ) {
+        return;
+    }
+    game_message_type severity = m_info;
+    if( sound.category == sounds::sound_t::combat || sound.category == sounds::sound_t::alarm ) {
+        severity = m_warning;
+    }
+    const std::string final_description = ensure_punctuation( sound.description.empty() ?
+                                          _( "a noise" ) : sound.description, '.' );
+    if( who.sees( sound.origin ) ) {
+        who.add_msg_if_player( severity, _( "You hear %1$s" ), final_description );
+    } else {
+        const std::string direction = direction_name( direction_from( who.bub_pos(), sound.origin ) );
+        who.add_msg_if_player( severity, _( "From the %1$s you hear %2$s" ), direction,
+                               final_description );
+    }
+}
+
 void sounds::process_sounds_npc()
 {
     ZoneScoped;
@@ -2527,6 +2550,9 @@ void sounds::process_sounds_npc()
                           element.from_npc ) ) {
 
                         who.handle_sound( ( tile_vol - passive_sound_dampening ), element.sound );
+                    }
+                    if( cata_mp::is_proxy( who ) ) {
+                        describe_sound_to_proxy( who, element.sound );
                     }
                 }
                 // Deafening is based on the felt volume, as an NPC may be too deaf to

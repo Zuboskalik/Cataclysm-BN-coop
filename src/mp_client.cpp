@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -19,7 +20,9 @@
 #include "debug.h"
 #include "game.h"
 #include "game_constants.h"
+#include "crafting_gui.h"
 #include "game_inventory.h"
+#include "gun_mode.h"
 #include "input.h"
 #include "item.h"
 #include "item_handling_util.h"
@@ -30,7 +33,9 @@
 #include "map/submap.h"
 #include "messages.h"
 #include "mod_manager.h"
+#include "map/field_type.h"
 #include "monster.h"
+#include "mtype.h"
 #include "mp_common.h"
 #include "mp_net.h"
 #include "npc.h"
@@ -39,7 +44,9 @@
 #include "output.h"
 #include "overmap/overmapbuffer.h"
 #include "pickup_token.h"
+#include "player_activity.h"
 #include "popup.h"
+#include "recipe.h"
 #include "string_formatter.h"
 #include "string_input_popup.h"
 #include "string_utils.h"
@@ -79,7 +86,7 @@ namespace cata_mp::client
 namespace
 {
 
-const std::string scratch_world_name = "Co-op (client)";
+const std::string &scratch_world_name = client_world_name;
 constexpr int connect_timeout_ms = 6000;
 constexpr int handshake_timeout_ms = 15000;
 
@@ -115,14 +122,15 @@ struct state_t {
 
 state_t S;
 // Submaps this client had to stub out because it did not have them yet.
+// Stubs are created by map loading worker threads, so guard the list.
+std::mutex placeholders_mutex;
 std::vector<tripoint_abs_sm> placeholders;
 
 // ---- low level helpers ------------------------------------------------------
 
 bool scratch_world_exists()
 {
-    const std::vector<std::string> names = world_generator->all_worldnames();
-    return std::find( names.begin(), names.end(), scratch_world_name ) != names.end();
+    return world_generator->has_world( scratch_world_name );
 }
 
 bool parse_address( const std::string &text, std::string &host, uint16_t &port )
@@ -440,16 +448,20 @@ void apply_state( message &m )
     if( jo.has_array( "mon_keys" ) && jo.has_member( "mon" ) ) {
         std::vector<std::string> keys;
         jo.read( "mon_keys", keys );
+        std::vector<std::pair<std::string, shared_ptr_fast<monster>>> incoming;
         JsonIn &ji = *jo.get_raw( "mon" );
         ji.start_array();
-        size_t i = 0;
         while( !ji.end_array() ) {
             shared_ptr_fast<monster> mon = make_shared_fast<monster>();
             mon->deserialize( ji );
-            if( i >= keys.size() ) {
-                break;
+            if( incoming.size() < keys.size() ) {
+                incoming.emplace_back( keys[incoming.size()], mon );
             }
-            const std::string &key = keys[i++];
+        }
+        // Take every updated monster off the map before placing any of them:
+        // within one update monsters swap places or follow each other, and
+        // placing them one by one would land some on a not yet moved one.
+        for( const auto &[key, mon] : incoming ) {
             const auto old = S.monsters.find( key );
             if( old != S.monsters.end() ) {
                 if( old->second ) {
@@ -457,9 +469,22 @@ void apply_state( message &m )
                 }
                 S.monsters.erase( old );
             }
+        }
+        for( const auto &[key, mon] : incoming ) {
             const tripoint_bub_ms pos = abs_to_bub( mon->abs_pos() );
             if( !here.inbounds( pos ) ) {
                 continue;
+            }
+            // The host is the authority on who stands where: whatever still
+            // occupies the tile here is stale.
+            if( monster *const stale = g->critter_at<monster>( pos, true ) ) {
+                for( auto it = S.monsters.begin(); it != S.monsters.end(); ++it ) {
+                    if( it->second.get() == stale ) {
+                        S.monsters.erase( it );
+                        break;
+                    }
+                }
+                g->remove_zombie( *stale );
             }
             if( g->place_critter_around( mon, pos, 0, true ) != nullptr ) {
                 S.monsters[key] = mon;
@@ -546,8 +571,9 @@ std::string pos_fields( const tripoint_bub_ms &p )
 std::string item_fields( item *it )
 {
     avatar &u = get_avatar();
-    return string_format( ",\"idx\":%d,\"type\":%s", item_index_of( u, it ),
-                          json_quote( it->typeId().str() ) );
+    return string_format( ",\"idx\":%d,\"type\":%s,\"ord\":%d,\"name\":%s", item_index_of( u, it ),
+                          json_quote( it->typeId().str() ), item_type_ordinal( u, it ),
+                          json_quote( item_match_name( *it ) ) );
 }
 
 bool choose_wait_duration( int &turns )
@@ -598,9 +624,13 @@ void request_pickup( const tripoint_bub_ms &pos )
             continue;
         }
         const int index = static_cast<int>( found - ground.begin() );
+        const int ordinal = static_cast<int>( std::count_if( ground.begin(), found,
+        [target]( const item * g ) {
+            return g->typeId() == target->typeId();
+        } ) );
         list += list.empty() ? "" : ",";
-        list += string_format( "[%d,%d,%s]", index, sel.quantity.value_or( 0 ),
-                               json_quote( target->typeId().str() ) );
+        list += string_format( "[%d,%d,%s,%d]", index, sel.quantity.value_or( 0 ),
+                               json_quote( target->typeId().str() ), ordinal );
     }
     if( list.empty() ) {
         add_msg( m_info, _( "You can only pick up loose items from the ground in co-op." ) );
@@ -609,7 +639,7 @@ void request_pickup( const tripoint_bub_ms &pos )
     send_action( "pickup", pos_fields( pos ) + ",\"items\":[" + list + "]" );
 }
 
-void request_drop()
+void request_drop( const std::optional<tripoint_bub_ms> &where = std::nullopt )
 {
     avatar &u = get_avatar();
     const drop_locations locs = game_menus::inv::multidrop( u );
@@ -623,12 +653,100 @@ void request_drop()
             continue;
         }
         list += list.empty() ? "" : ",";
-        list += string_format( "[%d,%d,%s]", item_index_of( u, it ), loc.count,
-                               json_quote( it->typeId().str() ) );
+        list += string_format( "[%d,%d,%s,%d,%s]", item_index_of( u, it ), loc.count,
+                               json_quote( it->typeId().str() ), item_type_ordinal( u, it ),
+                               json_quote( item_match_name( *it ) ) );
     }
     if( !list.empty() ) {
-        send_action( "drop", ",\"items\":[" + list + "]" );
+        send_action( "drop", ( where ? pos_fields( *where ) : std::string() ) + ",\"items\":[" + list + "]" );
     }
+}
+
+// The recipe is picked from what our copy of the character can make; the
+// host checks it again and does the crafting.
+void request_craft( const bool is_long, const bool again )
+{
+    avatar &u = get_avatar();
+    static recipe_id last_recipe;
+    static int last_batch = 1;
+    recipe_id id = last_recipe;
+    int batch = last_batch;
+    if( !again || last_recipe.is_empty() ) {
+        const recipe *picked = select_crafting_recipe( batch, u );
+        if( picked == nullptr ) {
+            return;
+        }
+        id = picked->ident();
+        last_recipe = id;
+        last_batch = batch;
+    }
+    send_action( "craft", string_format( ",\"recipe\":%s,\"batch\":%d,\"long\":%s",
+                                         json_quote( id.str() ), std::max( 1, batch ), is_long ? "true" : "false" ) );
+}
+
+// Picks a target for the wielded gun; the host does the shooting.
+void request_fire()
+{
+    avatar &u = get_avatar();
+    if( !u.is_armed() || !u.primary_weapon().is_gun() ) {
+        add_msg( m_info, _( "You are not wielding a gun." ) );
+        return;
+    }
+    const item &gun = u.primary_weapon();
+    const int range = std::max( 1, gun.gun_range( &u ) );
+    std::vector<Creature *> targets = g->get_creatures_if( [&]( const Creature & c ) {
+        return &c != &u && c.is_monster() && u.sees( c ) &&
+               rl_dist( u.bub_pos(), c.bub_pos() ) <= range &&
+               c.attitude_to( u ) == Attitude::A_HOSTILE;
+    } );
+    std::sort( targets.begin(), targets.end(), [&u]( const Creature * a, const Creature * b ) {
+        return rl_dist( u.bub_pos(), a->bub_pos() ) < rl_dist( u.bub_pos(), b->bub_pos() );
+    } );
+    uilist menu;
+    menu.text = string_format( _( "Fire your %1$s (%2$s, %3$d rounds left) at:" ), gun.tname(),
+                               gun.gun_current_mode().tname(), gun.ammo_remaining() );
+    for( size_t i = 0; i < targets.size(); ++i ) {
+        menu.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, string_format( _( "%1$s (%2$d)" ),
+                       targets[i]->disp_name(), rl_dist( u.bub_pos(), targets[i]->bub_pos() ) ) );
+    }
+    const int pick_spot = static_cast<int>( targets.size() );
+    menu.addentry( pick_spot, true, 's', _( "Choose a spot…" ) );
+    menu.query();
+    std::optional<tripoint_bub_ms> target;
+    if( menu.ret >= 0 && menu.ret < pick_spot ) {
+        target = targets[menu.ret]->bub_pos();
+    } else if( menu.ret == pick_spot ) {
+        target = g->look_around();
+    }
+    if( !target || *target == u.bub_pos() ) {
+        return;
+    }
+    send_action( "fire", pos_fields( *target ) );
+}
+
+// The wield menu also offers items lying next to the character.
+void request_ground_wield( const item *it )
+{
+    avatar &u = get_avatar();
+    map &here = get_map();
+    for( const tripoint_bub_ms &p : here.points_in_radius( u.bub_pos(), 1 ) ) {
+        std::vector<item *> ground;
+        for( item *g : here.i_at( p ) ) {
+            ground.push_back( g );
+        }
+        const auto found = std::find( ground.begin(), ground.end(), it );
+        if( found == ground.end() ) {
+            continue;
+        }
+        const int ordinal = static_cast<int>( std::count_if( ground.begin(), found,
+        [it]( const item * g ) {
+            return g->typeId() == it->typeId();
+        } ) );
+        send_action( "wield", pos_fields( p ) + string_format( ",\"gidx\":%d,\"type\":%s,\"ord\":%d",
+                     static_cast<int>( found - ground.begin() ), json_quote( it->typeId().str() ), ordinal ) );
+        return;
+    }
+    add_msg( m_info, _( "You can't reach that." ) );
 }
 
 void request_item_action( const std::string &name, item *it )
@@ -789,13 +907,17 @@ void handle_line( const std::string &line )
 
 void flush_placeholders()
 {
-    if( placeholders.empty() || !S.in_game ) {
-        placeholders.clear();
+    std::vector<tripoint_abs_sm> pending;
+    {
+        std::lock_guard<std::mutex> lk( placeholders_mutex );
+        pending.swap( placeholders );
+    }
+    if( pending.empty() || !S.in_game ) {
         return;
     }
     std::string list;
     mapbuffer &mb = get_map().get_mapbuffer();
-    for( const tripoint_abs_sm &p : placeholders ) {
+    for( const tripoint_abs_sm &p : pending ) {
         // Skip stubs that real data from the host has already replaced.
         const submap *sm = mb.lookup_submap_in_memory( p );
         const ter_id stub = p.z() > 0 ? t_open_air : t_null;
@@ -805,7 +927,6 @@ void flush_placeholders()
         list += list.empty() ? "" : ",";
         list += string_format( "[%d,%d,%d]", p.x(), p.y(), p.z() );
     }
-    placeholders.clear();
     if( !list.empty() ) {
         send( "{\"t\":\"need\",\"sm\":[" + list + "]}" );
     }
@@ -829,16 +950,16 @@ std::string status_line()
     const int rtt = net::client_rtt_ms();
     std::string turn;
     if( S.waiting ) {
-        turn = _( "waiting" );
-    } else if( S.my_turn ) {
-        turn = _( "your turn" );
+        turn = colorize( _( "WAITING" ), c_light_blue );
+    } else if( S.my_turn && !S.awaiting_ack ) {
+        turn = colorize( _( "YOUR TURN" ), c_light_green );
     } else if( S.awaiting_ack ) {
-        turn = _( "acting…" );
+        turn = colorize( _( "ACTING…" ), c_yellow );
     } else {
-        turn = string_format( _( "%s's turn" ), S.host_name );
+        turn = colorize( string_format( _( "%s'S TURN" ), S.host_name ), c_light_red );
     }
-    return string_format( _( "Co-op: connected to %s (%s:%d), %s, ping %s" ), S.host_name, S.address,
-                          S.port, turn, rtt >= 0 ? string_format( "%d ms", rtt ) : std::string( "?" ) );
+    return string_format( _( "%s  Co-op: connected to %s (%s:%d), ping %s" ), turn, S.host_name,
+                          S.address, S.port, rtt >= 0 ? string_format( "%d ms", rtt ) : std::string( "?" ) );
 }
 
 void leave_session( bool ask )
@@ -1093,12 +1214,19 @@ bool client_intercept_action( action_id act,
             break;
     }
 
-    if( S.waiting ) {
+    // Our character's long action (pulping, crafting...) runs on the host and
+    // shows up here through the mirrored state.
+    const bool busy = u.activity && *u.activity;
+    if( S.waiting || busy ) {
         if( act == ACTION_PAUSE || act == ACTION_WAIT ) {
             client::send( "{\"t\":\"stop_wait\"}" );
-            add_msg( m_info, _( "You decide to stop waiting." ) );
+            add_msg( m_info, S.waiting ? _( "You decide to stop waiting." ) :
+                     _( "You stop what you are doing." ) );
+            // Don't wait for the host to confirm: it may be busy itself.
+            S.waiting = false;
         } else {
-            add_msg( m_info, _( "You are waiting.  Press the pause key to stop." ) );
+            add_msg( m_info, S.waiting ? _( "You are waiting.  Press the pause key to stop." ) :
+                     _( "You are busy.  Press the pause key to stop." ) );
         }
         return true;
     }
@@ -1160,7 +1288,17 @@ bool client_intercept_action( action_id act,
         case ACTION_SMASH: {
             const std::optional<tripoint_bub_ms> p = choose_adjacent( _( "Smash where?" ), true );
             if( p ) {
-                client::send_action( "smash", client::pos_fields( *p ) );
+                bool acid = false;
+                for( const item *it : get_map().i_at( *p ) ) {
+                    if( it->is_corpse() && it->damage() < it->max_damage() &&
+                        ( it->get_mtype()->has_flag( MF_REVIVES ) || it->get_mtype()->zombify_into ) &&
+                        it->get_mtype()->bloodType()->has_acid ) {
+                        acid = query_yn( _( "Are you sure you want to pulp an acid filled corpse?" ) );
+                        break;
+                    }
+                }
+                client::send_action( "smash", client::pos_fields( *p ) +
+                                     ( acid ? ",\"acid\":true" : "" ) );
             }
             return true;
         }
@@ -1181,11 +1319,20 @@ bool client_intercept_action( action_id act,
         case ACTION_DROP:
             client::request_drop();
             return true;
+        case ACTION_DIR_DROP: {
+            const std::optional<tripoint_bub_ms> p = choose_adjacent( _( "Drop where?" ) );
+            if( p ) {
+                client::request_drop( p );
+            }
+            return true;
+        }
         case ACTION_WIELD: {
             item *it = game_menus::inv::wield( u );
             if( it != nullptr ) {
                 if( it->is_null() ) {
                     client::send_action( "unwield" );
+                } else if( item_index_of( u, it ) < 0 ) {
+                    client::request_ground_wield( it );
                 } else {
                     client::request_item_action( "wield", it );
                 }
@@ -1194,6 +1341,22 @@ bool client_intercept_action( action_id act,
         }
         case ACTION_WEAR:
             client::request_item_action( "wear", game_menus::inv::wear( u ) );
+            return true;
+        case ACTION_FIRE:
+            client::request_fire();
+            return true;
+        case ACTION_CRAFT:
+        case ACTION_LONGCRAFT:
+        case ACTION_RECRAFT:
+            client::request_craft( act == ACTION_LONGCRAFT, act == ACTION_RECRAFT );
+            return true;
+        case ACTION_RELOAD_WEAPON:
+        case ACTION_RELOAD_WIELDED:
+        case ACTION_RELOAD_ITEM:
+            client::send_action( "reload" );
+            return true;
+        case ACTION_SELECT_FIRE_MODE:
+            client::send_action( "fire_mode" );
             return true;
         case ACTION_TAKE_OFF:
             client::request_item_action( "takeoff", game_menus::inv::take_off( u ) );
@@ -1244,6 +1407,7 @@ void client_placeholder_created( const tripoint_abs_sm &base )
     if( !is_client() ) {
         return;
     }
+    std::lock_guard<std::mutex> lk( client::placeholders_mutex );
     for( const point_rel_sm &d : { point_rel_sm( 0, 0 ), point_rel_sm( 1, 0 ), point_rel_sm( 0, 1 ), point_rel_sm( 1, 1 ) } ) {
         client::placeholders.push_back( base + d );
     }

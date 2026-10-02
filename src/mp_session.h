@@ -50,6 +50,10 @@ void disarm_host();
 bool host_armed();
 // Asks for the port and password used for hosting; false if cancelled.
 bool configure_host();
+// Name of the local world a co-op client plays in.  It is a throwaway copy
+// recreated on every join, so world lists leave it out.
+extern const std::string client_world_name;
+
 // The whole join flow: address prompt, handshake, scratch world, character.
 // Returns true when the game has been started as a client.
 bool join_game();

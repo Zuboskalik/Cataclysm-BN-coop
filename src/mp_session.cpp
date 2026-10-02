@@ -1,9 +1,12 @@
 #include "mp_session.h"
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <ctime>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 #include "avatar.h"
 #include "character.h"
@@ -30,13 +33,16 @@
 namespace cata_mp
 {
 
+const std::string client_world_name = "Co-op (client)";
+
 // ============================================================================
 // Session state
 // ============================================================================
 
 namespace
 {
-role g_role = role::none;
+// Read from map loading worker threads too (suppress_world_simulation).
+std::atomic<role> g_role{ role::none };
 bool g_host_armed = false;
 session_settings g_settings;
 bool g_settings_loaded = false;
@@ -210,6 +216,66 @@ item *item_at_index( Character &who, const int index )
         return VisitResponse::NEXT;
     } );
     return found;
+}
+
+std::string item_match_name( const item &it )
+{
+    return remove_color_tags( it.tname( 1, false ) );
+}
+
+int item_type_ordinal( Character &who, const item *it )
+{
+    if( it == nullptr ) {
+        return -1;
+    }
+    int ordinal = 0;
+    int found = -1;
+    who.visit_items( [&]( const item * node ) {
+        if( node == it ) {
+            found = ordinal;
+            return VisitResponse::ABORT;
+        }
+        if( node->typeId() == it->typeId() ) {
+            ++ordinal;
+        }
+        return VisitResponse::NEXT;
+    } );
+    return found;
+}
+
+item *find_carried_item( Character &who, const int index, const std::string &type,
+                         const int ordinal, const std::string &name )
+{
+    item *const exact = item_at_index( who, index );
+    if( exact != nullptr && exact->typeId().str() == type &&
+        ( name.empty() || item_match_name( *exact ) == name ) ) {
+        return exact;
+    }
+    std::vector<item *> same_type;
+    who.visit_items( [&]( item * node ) {
+        if( node->typeId().str() == type ) {
+            same_type.push_back( node );
+        }
+        return VisitResponse::NEXT;
+    } );
+    if( same_type.empty() ) {
+        return nullptr;
+    }
+    std::vector<item *> same_name;
+    for( item *candidate : same_type ) {
+        if( !name.empty() && item_match_name( *candidate ) == name ) {
+            same_name.push_back( candidate );
+        }
+    }
+    const std::vector<item *> &pool = same_name.empty() ? same_type : same_name;
+    if( ordinal >= 0 && static_cast<size_t>( ordinal ) < same_type.size() &&
+        std::find( pool.begin(), pool.end(), same_type[ordinal] ) != pool.end() ) {
+        return same_type[ordinal];
+    }
+    if( exact != nullptr && std::find( pool.begin(), pool.end(), exact ) != pool.end() ) {
+        return exact;
+    }
+    return pool.front();
 }
 
 // ============================================================================

@@ -44,6 +44,7 @@
 #include "map_memory.h"
 #include "martialarts.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "mission.h"
 #include "monster.h"
 #include "morale.h"
@@ -144,6 +145,10 @@ void avatar::control_npc( npc &np )
 {
     if( !np.is_player_ally() ) {
         debugmsg( "control_npc() called on non-allied npc %s", np.name );
+        return;
+    }
+    if( cata_mp::is_proxy( np ) ) {
+        add_msg( m_info, _( "%s is another player's character." ), np.name );
         return;
     }
     // Cancel activities before swap to prevent issues with stale references

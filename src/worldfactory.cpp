@@ -25,6 +25,7 @@
 #include "input.h"
 #include "json.h"
 #include "mod_manager.h"
+#include "mp_session.h"
 #include "output.h"
 #include "path_info.h"
 #include "point.h"
@@ -267,6 +268,10 @@ std::vector<std::string> worldfactory::all_worldnames() const
     std::vector<std::string> result;
     result.reserve( all_worlds.size() );
     for( auto &elem : all_worlds ) {
+        // The co-op client's throwaway world is not something to load or edit.
+        if( elem.first == cata_mp::client_world_name ) {
+            continue;
+        }
         result.push_back( elem.first );
     }
     return result;

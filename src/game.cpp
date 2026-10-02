@@ -3915,6 +3915,8 @@ bool game::is_game_over()
         auto followers = get_follower_list()
         | std::views::transform( [&]( const auto & elem ) { return get_overmapbuffer( current_dimension_id_ ).find_npc( elem ); } )
         | std::views::filter( []( const auto & follower ) { return follower && !follower->is_dead_state(); } )
+        // Co-op: another player's character is not a follower to take over.
+        | std::views::filter( []( const auto & follower ) { return !cata_mp::is_proxy( *follower ); } )
         | std::ranges::to<std::vector>();
 
         if( !followers.empty() ) {
@@ -7698,6 +7700,14 @@ bool game::swap_critters( Creature &a, Creature &b )
     }
 
     auto temp = second.bub_pos();
+    // Two NPCs: the location map would refuse to put one onto the other.
+    if( first.is_npc() && second.is_npc() ) {
+        const npc &n1 = *first.as_npc();
+        const npc &n2 = *second.as_npc();
+        if( &n1.get_mapbuffer() == &n2.get_mapbuffer() ) {
+            n1.get_mapbuffer().swap_active_npc_positions( n1, n2 );
+        }
+    }
     second.setpos( first.bub_pos() );
 
     if( first.is_player() ) {
@@ -8202,7 +8212,10 @@ bool game::npc_menu( npc &who, const bool &force )
         tutorial
     };
 
-    const bool obeys = debug_mode || ( who.is_player_ally() && !who.in_sleep_state() );
+    // Co-op: another player's character counts as asleep while that player is
+    // offline, but it can still be moved out of the way.
+    const bool obeys = debug_mode || ( who.is_player_ally() && ( !who.in_sleep_state() ||
+                                       cata_mp::is_proxy( who ) ) );
 
     uilist amenu;
 
@@ -8220,7 +8233,7 @@ bool game::npc_menu( npc &who, const bool &force )
         amenu.addentry( steal, !who.is_enemy(), 'S', _( "Steal" ) );
     }
     if( who.is_player_ally() ) {
-        amenu.addentry( control, who.is_player_ally(), 'c', _( "Control" ) );
+        amenu.addentry( control, who.is_player_ally() && !cata_mp::is_proxy( who ), 'c', _( "Control" ) );
         amenu.addentry( tutorial, true, 'T', _( "NPC Ally Tutorial" ) );
     }
 

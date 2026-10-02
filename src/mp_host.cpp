@@ -23,6 +23,7 @@
 #include "game.h"
 #include "game_constants.h"
 #include "gates.h"
+#include "gun_mode.h"
 #include "input.h"
 #include "item.h"
 #include "line.h"
@@ -31,7 +32,9 @@
 #include "map/mapdata.h"
 #include "map/submap.h"
 #include "messages.h"
+#include "map/field_type.h"
 #include "monster.h"
+#include "mtype.h"
 #include "mp_common.h"
 #include "mp_net.h"
 #include "npc.h"
@@ -40,6 +43,11 @@
 #include "overmap/overmapbuffer.h"
 #include "player_activity.h"
 #include "popup.h"
+#include "ranged.h"
+#include "recipe.h"
+#include "requirements.h"
+#include "itype.h"
+#include "reload/reload_selection.h"
 #include "string_formatter.h"
 #include "string_utils.h"
 #include "translations.h"
@@ -789,6 +797,22 @@ action_result do_move( npc &guy, int dx, int dy )
             guy.melee_attack( *critter, true );
             return action_result{};
         }
+        // Friends and pets step aside, like followers do for the player.
+        const bool can_swap = critter->is_monster() ? critter->as_monster()->is_pet() :
+                              ( !critter->as_character()->in_sleep_state() || is_proxy( *critter->as_character() ) );
+        if( can_swap && here.passable( guy.bub_pos() ) ) {
+            const std::string other = critter->disp_name( false, true );
+            if( g->swap_critters( guy, *critter ) ) {
+                guy.mod_moves( -100 );
+                guy.add_msg_if_player( _( "You swap places with %s." ), other );
+                if( critter->is_avatar() ) {
+                    add_msg( _( "%s swaps places with you." ), guy.get_name() );
+                } else {
+                    critter->add_msg_if_player( _( "%s swaps places with you." ), guy.get_name() );
+                }
+                return action_result{};
+            }
+        }
         return fail( string_format( _( "%s is in the way." ), critter->disp_name( false, true ) ) );
     }
     const bool inside = !here.is_outside( guy.bub_pos() );
@@ -895,7 +919,7 @@ action_result do_close( npc &guy, const tripoint_bub_ms &pos )
     return action_result{};
 }
 
-action_result do_smash( npc &guy, const tripoint_bub_ms &target )
+action_result do_smash( npc &guy, const tripoint_bub_ms &target, const bool pulp_acid )
 {
     map &here = get_map();
     tripoint_bub_ms smashp = target;
@@ -908,6 +932,40 @@ action_result do_smash( npc &guy, const tripoint_bub_ms &target )
         smash_floor = true;
     } else if( smashp.z() > guy.bub_pos().z() ) {
         return fail( _( "You can't reach that." ) );
+    }
+    // Corpses that would get back up are pulped first, like the player does.
+    // Same test as the pulping activity itself, so it never starts on a
+    // pile it would not touch (e.g. with revival disabled by a mod).
+    bool has_acid = false;
+    bool should_pulp = false;
+    for( const item *it : here.i_at( smashp ) ) {
+        if( !it->is_corpse() || it->damage() >= it->max_damage() ) {
+            continue;
+        }
+        const mtype *corpse_type = it->get_mtype();
+        if( !corpse_type->has_flag( MF_REVIVES ) && !corpse_type->zombify_into ) {
+            continue;
+        }
+        if( corpse_type->bloodType()->has_acid ) {
+            has_acid = true;
+            if( !pulp_acid ) {
+                continue;
+            }
+        }
+        should_pulp = true;
+    }
+    if( should_pulp ) {
+        guy.assign_activity( std::make_unique<player_activity>( activity_id( "ACT_PULP" ),
+                             calendar::INDEFINITELY_LONG, 0 ) );
+        guy.activity->placement = bub_to_abs( smashp );
+        if( !pulp_acid ) {
+            guy.activity->str_values.emplace_back( "auto_pulp_no_acid" );
+        }
+        return action_result{};
+    }
+    if( has_acid ) {
+        // The player chose not to pulp an acid filled corpse.
+        return fail( std::string() );
     }
     item &weapon = guy.primary_weapon();
     const int smashskill = guy.str_cur + weapon.damage_melee( DT_BASH );
@@ -932,24 +990,58 @@ action_result do_smash( npc &guy, const tripoint_bub_ms &target )
     return action_result{};
 }
 
-// [[index, count, type], ...] -> resolved (item, count) pairs.
-std::vector<std::pair<item *, int>> resolve_ground_items( const tripoint_bub_ms &pos,
-        const JsonArray &list )
+// The ground item the client means: by its index in the pile, or, when the
+// pile changed order, the same one of that type.
+item *resolve_ground_item( const std::vector<item *> &ground, const int index,
+                           const std::string &type, const int ordinal )
+{
+    if( index >= 0 && static_cast<size_t>( index ) < ground.size() &&
+        ground[index]->typeId().str() == type ) {
+        return ground[index];
+    }
+    item *it = nullptr;
+    int seen = 0;
+    for( item *candidate : ground ) {
+        if( candidate->typeId().str() != type ) {
+            continue;
+        }
+        if( it == nullptr || seen == ordinal ) {
+            it = candidate;
+        }
+        if( seen == ordinal ) {
+            break;
+        }
+        ++seen;
+    }
+    return it;
+}
+
+std::vector<item *> ground_items( const tripoint_bub_ms &pos )
 {
     std::vector<item *> ground;
     for( item *it : get_map().i_at( pos ) ) {
         ground.push_back( it );
     }
+    return ground;
+}
+
+// [[index, count, type, ordinal], ...] -> resolved (item, count) pairs.
+std::vector<std::pair<item *, int>> resolve_ground_items( const tripoint_bub_ms &pos,
+        const JsonArray &list )
+{
+    const std::vector<item *> ground = ground_items( pos );
     std::vector<std::pair<item *, int>> result;
     for( JsonArray entry : list ) {
-        const int index = entry.get_int( 0 );
         const int count = entry.get_int( 1 );
-        const std::string type = entry.get_string( 2 );
-        if( index < 0 || static_cast<size_t>( index ) >= ground.size() ||
-            ground[index]->typeId().str() != type ) {
+        item *it = resolve_ground_item( ground, entry.get_int( 0 ), entry.get_string( 2 ),
+                                        entry.size() > 3 ? entry.get_int( 3 ) : -1 );
+        if( it == nullptr || std::any_of( result.begin(), result.end(),
+        [it]( const std::pair<item *, int> &r ) {
+        return r.first == it;
+    } ) ) {
             continue;
         }
-        result.emplace_back( ground[index], count );
+        result.emplace_back( it, count );
     }
     return result;
 }
@@ -961,8 +1053,16 @@ std::vector<std::pair<item *, int>> resolve_carried_items( npc &guy, const JsonA
         const int index = entry.get_int( 0 );
         const int count = entry.get_int( 1 );
         const std::string type = entry.get_string( 2 );
-        item *it = item_at_index( guy, index );
-        if( it == nullptr || it->typeId().str() != type ) {
+        const int ordinal = entry.size() > 3 ? entry.get_int( 3 ) : -1;
+        const std::string name = entry.size() > 4 ? entry.get_string( 4 ) : std::string();
+        item *it = find_carried_item( guy, index, type, ordinal, name );
+        if( it == nullptr ) {
+            continue;
+        }
+        // The same item picked twice (two entries resolved to one): skip.
+        if( std::any_of( result.begin(), result.end(), [it]( const std::pair<item *, int> &r ) {
+        return r.first == it;
+    } ) ) {
             continue;
         }
         result.emplace_back( it, count );
@@ -1035,13 +1135,20 @@ detached_ptr<item> take_from_character( npc &guy, item &it, int count )
     return guy.remove_item( it );
 }
 
-action_result do_drop( npc &guy, const JsonArray &list )
+action_result do_drop( npc &guy, const JsonArray &list, const std::optional<tripoint_bub_ms> &where )
 {
+    map &here = get_map();
+    const tripoint_bub_ms dest = where.value_or( guy.bub_pos() );
+    if( rl_dist( guy.bub_pos(), dest ) > 1 || !here.inbounds( dest ) ) {
+        return fail( _( "That is too far away." ) );
+    }
+    if( !here.can_put_items_ter_furn( dest ) ) {
+        return fail( _( "You can't place items there!" ) );
+    }
     const auto targets = resolve_carried_items( guy, list );
     if( targets.empty() ) {
         return fail( _( "You no longer have that." ) );
     }
-    map &here = get_map();
     int dropped = 0;
     for( const auto &[it, count] : targets ) {
         const std::string name = it->tname( it->count_by_charges() && count > 0 ? count : 1 );
@@ -1049,7 +1156,7 @@ action_result do_drop( npc &guy, const JsonArray &list )
         if( !d ) {
             continue;
         }
-        here.add_item_or_charges( guy.bub_pos(), std::move( d ) );
+        here.add_item_or_charges( dest, std::move( d ) );
         guy.add_msg_if_player( _( "You drop %s." ), name );
         ++dropped;
     }
@@ -1062,11 +1169,8 @@ action_result do_drop( npc &guy, const JsonArray &list )
 
 item *carried_item( npc &guy, const JsonObject &jo )
 {
-    item *it = item_at_index( guy, jo.get_int( "idx", -1 ) );
-    if( it == nullptr || it->typeId().str() != jo.get_string( "type", "" ) ) {
-        return nullptr;
-    }
-    return it;
+    return find_carried_item( guy, jo.get_int( "idx", -1 ), jo.get_string( "type", "" ),
+                              jo.get_int( "ord", -1 ), jo.get_string( "name", "" ) );
 }
 
 action_result do_item_action( npc &guy, const std::string &what, const JsonObject &jo )
@@ -1077,6 +1181,27 @@ action_result do_item_action( npc &guy, const std::string &what, const JsonObjec
         }
         guy.wield( null_item_reference() );
         guy.add_msg_if_player( _( "You put away your weapon." ) );
+        return action_result{};
+    }
+    if( what == "wield" && jo.has_int( "gidx" ) ) {
+        // An item lying next to the player.
+        const tripoint_bub_ms pos = read_bub( jo );
+        if( rl_dist( guy.bub_pos(), pos ) > 1 || !get_map().inbounds( pos ) ) {
+            return fail( _( "That is too far away." ) );
+        }
+        item *const found = resolve_ground_item( ground_items( pos ), jo.get_int( "gidx" ),
+                            jo.get_string( "type", "" ), jo.get_int( "ord", -1 ) );
+        if( found == nullptr ) {
+            return fail( _( "That is no longer there." ) );
+        }
+        item &target = *found;
+        const ret_val<bool> can = guy.can_wield( target );
+        if( !can.success() ) {
+            return fail( can.str() );
+        }
+        const std::string name = target.tname();
+        guy.wield( target );
+        guy.add_msg_if_player( _( "You wield your %s." ), name );
         return action_result{};
     }
     item *it = carried_item( guy, jo );
@@ -1156,6 +1281,102 @@ bool hostile_in_view( npc &guy, std::string &what )
     return false;
 }
 
+item *wielded_gun( npc &guy )
+{
+    if( !guy.is_armed() ) {
+        return nullptr;
+    }
+    item &gun = guy.primary_weapon();
+    return gun.is_gun() && !gun.is_gunmod() ? &gun : nullptr;
+}
+
+action_result do_fire( npc &guy, const tripoint_bub_ms &target )
+{
+    item *gun = wielded_gun( guy );
+    if( gun == nullptr ) {
+        return fail( _( "You are not wielding a gun." ) );
+    }
+    if( !get_map().inbounds( target ) || target == guy.bub_pos() ) {
+        return fail( std::string() );
+    }
+    gun_mode mode = gun->gun_current_mode();
+    if( !mode ) {
+        return fail( string_format( _( "Your %s can't be fired." ), gun->tname() ) );
+    }
+    if( !mode->ammo_sufficient( mode.qty > 1 ? mode.qty : 1 ) && !mode->ammo_sufficient() ) {
+        return fail( string_format( _( "Your %s is empty." ), gun->tname() ) );
+    }
+    guy.aim();
+    const int fired = ranged::fire_gun( guy, target, mode.qty, *mode, nullptr );
+    if( fired == 0 ) {
+        return fail( string_format( _( "You can't fire your %s." ), gun->tname() ) );
+    }
+    return action_result{};
+}
+
+action_result do_reload( npc &guy )
+{
+    item *gun = wielded_gun( guy );
+    if( gun == nullptr ) {
+        return fail( _( "You are not wielding a gun." ) );
+    }
+    if( !guy.can_reload( *gun ) ) {
+        return fail( string_format( _( "Your %s is already fully loaded!" ), gun->tname() ) );
+    }
+    if( !reload_selection::prepare( guy, *gun ).selected ) {
+        return fail( string_format( _( "You don't have any ammo for your %s." ), gun->tname() ) );
+    }
+    const int before = gun->ammo_remaining();
+    guy.do_reload( *gun );
+    if( gun->ammo_remaining() == before ) {
+        return fail( string_format( _( "You can't reload your %s." ), gun->tname() ) );
+    }
+    guy.add_msg_if_player( _( "You reload your %s." ), gun->tname() );
+    return action_result{};
+}
+
+action_result do_cycle_fire_mode( npc &guy )
+{
+    item *gun = wielded_gun( guy );
+    if( gun == nullptr ) {
+        return fail( _( "You are not wielding a gun." ) );
+    }
+    if( gun->gun_all_modes().size() < 2 ) {
+        return fail( string_format( _( "Your %s has only one firing mode." ), gun->display_name() ) );
+    }
+    gun->gun_cycle_mode();
+    guy.add_msg_if_player( _( "Firing mode: %s." ), gun->gun_current_mode().tname() );
+    // Changing the mode takes no time.
+    return action_result{};
+}
+
+// Crafting checks that would ask the crafter a question are done here instead:
+// such a question would pop up on the host's screen.
+action_result do_craft( npc &guy, const JsonObject &jo )
+{
+    const recipe_id id( jo.get_string( "recipe", "" ) );
+    if( !id.is_valid() ) {
+        return fail( _( "The host does not know that recipe." ) );
+    }
+    const recipe &making = id.obj();
+    const int batch = std::clamp( jo.get_int( "batch", 1 ), 1, 1000 );
+    if( making.result()->phase == LIQUID ) {
+        return fail( _( "Crafting liquids is not available in co-op yet." ) );
+    }
+    if( !guy.can_make( &making, batch ) ) {
+        return fail( _( "You can no longer make that craft!" ) + std::string( "\n" ) +
+                     making.simple_requirements().list_missing() );
+    }
+    if( !guy.can_start_craft( &making, recipe_filter_flags::no_rotten, batch ) ) {
+        return fail( _( "That craft would use rotten components." ) );
+    }
+    guy.make_craft_with_command( id, batch, jo.get_bool( "long", false ) );
+    if( !guy.activity || !*guy.activity ) {
+        return fail( _( "You can't start that craft." ) );
+    }
+    return action_result{};
+}
+
 action_result execute( peer_t &p, npc &guy, message &m )
 {
     JsonObject jo = m.object();
@@ -1182,16 +1403,29 @@ action_result execute( peer_t &p, npc &guy, message &m )
         return do_close( guy, read_bub( jo ) );
     }
     if( a == "smash" ) {
-        return do_smash( guy, read_bub( jo ) );
+        return do_smash( guy, read_bub( jo ), jo.get_bool( "acid", false ) );
     }
     if( a == "pickup" ) {
         return do_pickup( guy, read_bub( jo ), jo.get_array( "items" ) );
     }
     if( a == "drop" ) {
-        return do_drop( guy, jo.get_array( "items" ) );
+        return do_drop( guy, jo.get_array( "items" ),
+                        jo.has_int( "x" ) ? std::optional<tripoint_bub_ms>( read_bub( jo ) ) : std::nullopt );
     }
     if( a == "wield" || a == "unwield" || a == "wear" || a == "takeoff" || a == "eat" ) {
         return do_item_action( guy, a, jo );
+    }
+    if( a == "fire" ) {
+        return do_fire( guy, read_bub( jo ) );
+    }
+    if( a == "craft" ) {
+        return do_craft( guy, jo );
+    }
+    if( a == "reload" ) {
+        return do_reload( guy );
+    }
+    if( a == "fire_mode" ) {
+        return do_cycle_fire_mode( guy );
     }
     if( a == "move_mode" ) {
         const int mode = jo.get_int( "mode", CMM_WALK );
@@ -1351,11 +1585,15 @@ void handle_line( int peer, const std::string &line )
         JsonObject jo = m.object();
         broadcast_chat( p->name, jo.get_string( "text", "" ) );
     } else if( t == "stop_wait" ) {
+        npc *proxy = proxy_of( *p );
         if( p->auto_wait_turns > 0 ) {
             p->auto_wait_turns = 0;
-            if( npc *proxy = proxy_of( *p ) ) {
+            if( proxy != nullptr ) {
                 proxy->add_msg_if_player( m_info, _( "You stop waiting." ) );
             }
+        }
+        if( proxy != nullptr && proxy->activity && *proxy->activity ) {
+            proxy->cancel_activity();
         }
     } else if( t == "need" ) {
         JsonObject jo = m.object();
@@ -1511,7 +1749,15 @@ bool host_proxy_turn( npc &guy )
         // their own, exactly like they do for the player character.
         if( guy.activity && *guy.activity ) {
             const int before = guy.get_moves();
+            // Finishing an activity reverts an NPC to its previous attitude
+            // and mission; a player's character must keep its own.
+            const npc_attitude attitude = guy.get_attitude();
+            const npc_mission mission = guy.mission;
             guy.activity->do_turn( guy );
+            if( guy.get_attitude() != attitude ) {
+                guy.set_attitude( attitude );
+            }
+            guy.mission = mission;
             if( guy.get_moves() == before ) {
                 guy.set_moves( 0 );
             }

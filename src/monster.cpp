@@ -2461,6 +2461,26 @@ void monster::melee_attack( Creature &target, float accuracy )
     const bodypart_str_id bp_hit = dealt_dam.bp_hit;
 
     const int total_dealt = dealt_dam.total_damage();
+    // A co-op player's character is an NPC on the host: tell the remote
+    // player what the local player would be told.  add_msg_if_player only
+    // reaches such NPCs.
+    if( target.is_npc() && !is_hallucination() ) {
+        const bool seen = target.sees( *this );
+        const std::string attacker = seen ? disp_name( false, true ) : std::string( _( "Something" ) );
+        if( !attack_success ) {
+            if( seen ) {
+                target.add_msg_if_player( _( "You dodge %s." ), disp_name() );
+            }
+        } else if( total_dealt > 0 ) {
+            //~ 1$s is attacker name, 2$s is bodypart name in accusative.
+            target.add_msg_if_player( m_bad, _( "%1$s hits your %2$s." ), attacker,
+                                      bp_hit->accusative.translated() );
+        } else {
+            //~ 1$s is attacker name, 2$s is bodypart name in accusative, 3$s is armor name
+            target.add_msg_if_player( _( "%1$s hits your %2$s, but your %3$s protects you." ), attacker,
+                                      bp_hit->accusative.translated(), target.skin_name() );
+        }
+    }
     if( !attack_success ) {
         // Miss
         if( u_see_me && !target.in_sleep_state() ) {

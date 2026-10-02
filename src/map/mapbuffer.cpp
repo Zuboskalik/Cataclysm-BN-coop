@@ -1695,6 +1695,16 @@ auto mapbuffer::update_active_npc_pos(const npc& guy, const tripoint_abs_ms& new
     return true;
 }
 
+auto mapbuffer::swap_active_npc_positions(const npc& a, const npc& b) -> void {
+    const auto ia = active_npcs_by_location_.find(a.abs_pos());
+    const auto ib = active_npcs_by_location_.find(b.abs_pos());
+    if (ia == active_npcs_by_location_.end() || ib == active_npcs_by_location_.end()
+        || ia->second.get() != &a || ib->second.get() != &b) {
+        return;
+    }
+    std::swap(ia->second, ib->second);
+}
+
 auto mapbuffer::remove_active_npc(const npc& guy) -> void {
     remove_active_npc_from_location_map(guy);
     const auto iter = std::ranges::find_if(active_npcs_, [&](const shared_ptr_fast<npc>& existing) {

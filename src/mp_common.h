@@ -91,8 +91,17 @@ class message
 // walk of everything the character possesses.  The client's copy of its
 // character is a deserialized snapshot of the proxy on the host, so both walks
 // yield the same order; the item type id is sent along as a cross-check.
+// The order can still drift (stacks merge differently once reloaded), so the
+// client also sends which of the items of that type it means and its name, and
+// the host falls back to those when the index does not match.
 int item_index_of( Character &who, const item *it );
 item *item_at_index( Character &who, int index );
+// How many items of the same type come before `it` in the walk.
+int item_type_ordinal( Character &who, const item *it );
+item *find_carried_item( Character &who, int index, const std::string &type, int ordinal,
+                         const std::string &name );
+// Name used to tell apart items of one type.
+std::string item_match_name( const item &it );
 
 // ---- host side (mp_host.cpp) ------------------------------------------------
 
