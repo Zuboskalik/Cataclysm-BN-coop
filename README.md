@@ -1,16 +1,29 @@
-# Cataclysm: Bright Nights — Co-op port (work in progress)
+# Cataclysm: Bright Nights CO-OP (port)
 
-> **This is an unofficial fork.** It is an attempt to port the co-op multiplayer mod
-> [busterbogheart/Cataclysm-DDA-multi](https://github.com/busterbogheart/Cataclysm-DDA-multi)
-> from Cataclysm: Dark Days Ahead to
-> [Cataclysm: Bright Nights](https://github.com/cataclysmbn/Cataclysm-BN).
-> I am not an author of the game or of the original co-op mod; I only port the mod.
-> Work in progress: expect bugs and missing features. See [COOP.md](./COOP.md) for how it works.
->
-> ❤️ **[Support the port on Boosty](https://boosty.to/zuboskalik/donate)** — donations are for
-> my work on the port, not for the game itself. The game is free; all releases are free.
+This is an unofficial fork of [Cataclysm: Bright Nights](https://github.com/cataclysmbn/Cataclysm-BN)
+that ports the two-player co-op multiplayer mod
+[Cataclysm-DDA-multi](https://github.com/busterbogheart/Cataclysm-DDA-multi)
+(made for Cataclysm: Dark Days Ahead) to Bright Nights.
+
+One player hosts a world, a second joins by IP address, and both play in the same world.
+
+I am not an author of the game or of the original co-op mod; this repository only contains
+the port. It is a work in progress: expect bugs and missing features.
+How it works: [COOP.md](./COOP.md).
+
+## Download
+
+Builds are in [Releases](../../releases). For now only **Windows x64 (tiles)** is built.
+Host and client must run the same build.
+
+## Support
+
+[Boosty](https://boosty.to/zuboskalik/donate) — donations are for my work on the port,
+not for the game itself. The game is free; all releases are free.
 
 ---
+
+*The original Cataclysm: Bright Nights README follows.*
 
 # Cataclysm: Bright Nights
 
