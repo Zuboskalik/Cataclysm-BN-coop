@@ -1,8 +1,9 @@
 @echo off
 rem Local helper: packs the Release build into a zip like the official CI does.
 rem Usage: package-coop.bat <version-label> [official-bn-folder]
+rem   official-bn-folder defaults to cbn-windows-tiles-x64-msvc-v0.13.0 next to this repository
 rem   e.g. package-coop.bat coop-v0.1.0
-rem        package-coop.bat coop-v0.1.0 C:\games\cbn-windows-tiles-x64-msvc-v0.13.0
+rem        package-coop.bat coop-v0.1.0 D:\path\to\cbn-windows-tiles-x64-msvc-v0.13.0
 rem Compiled translations (lang\mo) come from Transifex in the official CI and are
 rem not in the repository, so they are copied from an official BN release folder.
 rem Strings added by the co-op port stay in English.
@@ -11,7 +12,8 @@ if "%1"=="" (
   exit /b 1
 )
 set OFFICIAL=%~2
-if "%OFFICIAL%"=="" set OFFICIAL=C:\games\cbn-windows-tiles-x64-msvc-v0.13.0
+for %%I in ("%~dp0..") do set PROJECT_DIR=%%~fI
+if "%OFFICIAL%"=="" set OFFICIAL=%PROJECT_DIR%\cbn-windows-tiles-x64-msvc-v0.13.0
 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul
 cd /d %~dp0
 set DIST=%~dp0out\dist\cataclysmbn-%1

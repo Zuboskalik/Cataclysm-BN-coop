@@ -2,7 +2,9 @@
 rem Local helper: configure (optional) and build the Windows tiles release.
 rem Usage: build-coop.bat [configure]
 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul
-if "%VCPKG_ROOT%"=="" set VCPKG_ROOT=C:\games\src\vcpkg
+rem vcpkg is expected in src\vcpkg next to this repository unless VCPKG_ROOT is set.
+for %%I in ("%~dp0..") do set PROJECT_DIR=%%~fI
+if "%VCPKG_ROOT%"=="" set VCPKG_ROOT=%PROJECT_DIR%\src\vcpkg
 cd /d %~dp0
 if "%1"=="configure" (
   if exist CMakeUserPresets.json del CMakeUserPresets.json
