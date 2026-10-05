@@ -8,6 +8,7 @@
 #include "catacharset.h"
 #include "ime.h"
 #include "input.h"
+#include "mp_session.h"
 #include "output.h"
 #include "sdl_wrappers.h"
 #include "ui_manager.h"
@@ -347,6 +348,32 @@ query_popup::result query_popup::query_once()
 
 query_popup::result query_popup::query()
 {
+    // Co-op: the question belongs to the remote player whose action the host
+    // is running right now.
+    if( cata_mp::remote_prompts_active() ) {
+        if( options.empty() ) {
+            cata_mp::remote_message( text );
+            return result( false, anykey ? "ANY_INPUT" : "QUIT", input_event() );
+        }
+        const input_context ctxt( category );
+        std::vector<std::string> labels;
+        for( const query_option &opt : options ) {
+            labels.push_back( ctxt.get_action_name( opt.action ) );
+        }
+        const int pick = cata_mp::remote_choice( text, labels, {}, cancel );
+        if( pick >= 0 ) {
+            return result( false, options[pick].action, input_event() );
+        }
+        if( cancel ) {
+            return result( false, "QUIT", input_event() );
+        }
+        for( const query_option &opt : options ) {
+            if( opt.action == "NO" ) {
+                return result( false, "NO", input_event() );
+            }
+        }
+        return result( false, options.back().action, input_event() );
+    }
     ime_sentry sentry( ime_sentry::disable );
 
     std::shared_ptr<ui_adaptor> ui = create_or_get_adaptor();

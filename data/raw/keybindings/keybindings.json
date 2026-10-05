@@ -2326,7 +2326,14 @@
     "name": "Co-op Menu",
     "category": "DEFAULTMODE",
     "id": "coop_menu",
-    "bindings": [ { "input_method": "keyboard", "key": "Z" } ]
+    "bindings": [ { "input_method": "keyboard", "key": "F1" } ]
+  },
+  {
+    "type": "keybinding",
+    "name": "Co-op: options while waiting for a player",
+    "category": "COOP_WAIT",
+    "id": "COOP_WAIT_MENU",
+    "bindings": [ { "input_method": "keyboard", "key": "F2" } ]
   },
   {
     "type": "keybinding",

@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <map>
 #include <optional>
+#include <chrono>
 #include <set>
+#include <thread>
 #include <sstream>
 
 #include "avatar.h"
@@ -22,7 +24,9 @@
 #include "faction.h"
 #include "game.h"
 #include "game_constants.h"
+#include "construction.h"
 #include "gates.h"
+#include "iexamine.h"
 #include "gun_mode.h"
 #include "input.h"
 #include "item.h"
@@ -102,6 +106,9 @@ struct peer_t {
     std::optional<std::string> action;
     bool turn_announced = false;
     int auto_wait_turns = 0;
+    // The host chose not to wait for this player: their character idles
+    // until they send an action.
+    bool dont_wait = false;
 
     // What this client already has, by content hash.
     std::map<tripoint_abs_sm, size_t> sm_sent;
@@ -119,6 +126,24 @@ struct peer_t {
 };
 
 std::map<int, peer_t> peers;
+
+// Remote questions: while the host runs a player's action, questions go to
+// that player (prompt_peer); their answers arrive by question id.
+int prompt_peer = -1;
+int next_question_id = 1;
+std::map<int, int> answers;
+
+struct prompt_scope {
+    int saved;
+    explicit prompt_scope( int peer ) : saved( prompt_peer ) {
+        prompt_peer = peer;
+    }
+    ~prompt_scope() {
+        prompt_peer = saved;
+    }
+    prompt_scope( const prompt_scope & ) = delete;
+    prompt_scope &operator=( const prompt_scope & ) = delete;
+};
 
 void send( int peer, const std::string &msg )
 {
@@ -760,6 +785,19 @@ void park_proxy( const peer_t &p )
     }
 }
 
+// Kicks a player.  The goodbye tells the client this was deliberate, so it
+// does not reconnect on its own as it does after a dropped connection.
+void disconnect_peer( peer_t &p, const std::string &reason )
+{
+    send( p.id, "{\"t\":\"bye\",\"msg\":" + json_quote( reason ) + "}" );
+    if( p.joined ) {
+        park_proxy( p );
+        add_msg( m_info, _( "Co-op: %s was disconnected." ), p.name );
+        p.joined = false;
+    }
+    net::host_close_peer( p.id );
+}
+
 // ---- actions --------------------------------------------------------------
 
 struct action_result {
@@ -1292,14 +1330,19 @@ item *wielded_gun( npc &guy )
     return gun.is_gun() && !gun.is_gunmod() ? &gun : nullptr;
 }
 
-action_result do_fire( npc &guy, const tripoint_bub_ms &target )
+action_result do_fire( npc &guy, const JsonObject &jo )
 {
+    const tripoint_bub_ms target = read_bub( jo );
     item *gun = wielded_gun( guy );
     if( gun == nullptr ) {
         return fail( _( "You are not wielding a gun." ) );
     }
     if( !get_map().inbounds( target ) || target == guy.bub_pos() ) {
         return fail( std::string() );
+    }
+    // The fire mode the player chose in the targeting UI.
+    if( jo.has_string( "mode" ) ) {
+        gun->gun_set_mode( gun_mode_id( jo.get_string( "mode" ) ) );
     }
     gun_mode mode = gun->gun_current_mode();
     if( !mode ) {
@@ -1308,7 +1351,14 @@ action_result do_fire( npc &guy, const tripoint_bub_ms &target )
     if( !mode->ammo_sufficient( mode.qty > 1 ? mode.qty : 1 ) && !mode->ammo_sufficient() ) {
         return fail( string_format( _( "Your %s is empty." ), gun->tname() ) );
     }
-    guy.aim();
+    if( jo.has_member( "recoil" ) ) {
+        // Aimed in the client's targeting UI: take its result and the time
+        // it took (a long aim makes the character skip the following turns).
+        guy.recoil = std::clamp( jo.get_float( "recoil" ), 0.0, static_cast<double>( MAX_RECOIL ) );
+        guy.mod_moves( -std::clamp( jo.get_int( "aim_moves", 0 ), 0, 1000 ) );
+    } else {
+        guy.aim();
+    }
     const int fired = ranged::fire_gun( guy, target, mode.qty, *mode, nullptr );
     if( fired == 0 ) {
         return fail( string_format( _( "You can't fire your %s." ), gun->tname() ) );
@@ -1379,6 +1429,138 @@ action_result do_craft( npc &guy, const JsonObject &jo )
     return action_result{};
 }
 
+// "Examine" (e) of furniture, terrain or a trap with a special function
+// (the client handles plain item piles itself, through pickup).  Questions
+// those functions ask show up on the host's screen.
+action_result do_examine( npc &guy, const tripoint_bub_ms &pos )
+{
+    map &here = get_map();
+    if( rl_dist( guy.bub_pos(), pos ) > 1 || !here.inbounds( pos ) ) {
+        return fail( _( "That is too far away." ) );
+    }
+    if( here.veh_at( pos ) ) {
+        return fail( _( "Using vehicles is not available in co-op yet." ) );
+    }
+    if( here.has_flag( "CONSOLE", pos ) ) {
+        return fail( _( "Using computers is not available in co-op yet." ) );
+    }
+    const int before = guy.get_moves();
+    const tripoint_bub_ms guy_pos = guy.bub_pos();
+    if( here.has_furn( pos ) ) {
+        here.furn( pos ).obj().examine( guy, pos );
+    } else {
+        here.ter( pos ).obj().examine( guy, pos );
+    }
+    if( guy.bub_pos() == guy_pos && !here.tr_at( pos ).is_null() ) {
+        iexamine::trap( guy, pos );
+    }
+    if( guy.get_moves() == before && guy.bub_pos() == guy_pos && !( guy.activity && *guy.activity ) ) {
+        guy.mod_moves( -50 );
+    }
+    return action_result{};
+}
+
+// "Read" (R).  NPCs read only to learn a skill, so books just for fun
+// can't be read this way yet.
+action_result do_read( npc &guy, const JsonObject &jo )
+{
+    item *book = find_carried_item( guy, jo.get_int( "idx", -1 ), jo.get_string( "type", "" ),
+                                    jo.get_int( "ord", -1 ), jo.get_string( "name", "" ) );
+    if( book == nullptr ) {
+        return fail( _( "You no longer have that." ) );
+    }
+    std::vector<std::string> reasons;
+    if( !guy.can_read( *book, reasons ) ) {
+        std::string why;
+        for( const std::string &r : reasons ) {
+            why += why.empty() ? r : "  " + r;
+        }
+        return fail( why.empty() ? _( "You can't read that." ) : why );
+    }
+    guy.start_read( *book, &guy );
+    guy.add_msg_if_player( m_info, _( "Now reading %s." ), book->type_name() );
+    return action_result{};
+}
+
+// "Butcher" (B) the given corpses on the player's tile.
+action_result do_butcher( npc &guy, const JsonObject &jo )
+{
+    static const std::set<std::string> kinds = {
+        "ACT_BUTCHER", "ACT_BUTCHER_FULL", "ACT_FIELD_DRESS", "ACT_SKIN", "ACT_BLEED",
+        "ACT_QUARTER", "ACT_DISMEMBER", "ACT_DISSECT"
+    };
+    const std::string kind = jo.get_string( "kind", "" );
+    if( !kinds.contains( kind ) ) {
+        return fail( std::string() );
+    }
+    std::vector<item *> targets;
+    for( const auto &entry : resolve_ground_items( guy.bub_pos(), jo.get_array( "items" ) ) ) {
+        if( entry.first->is_corpse() ) {
+            targets.push_back( entry.first );
+        }
+    }
+    if( targets.empty() ) {
+        return fail( _( "There are no corpses here to butcher." ) );
+    }
+    guy.assign_activity( activity_id( kind ), 0, true );
+    for( item *c : targets ) {
+        guy.activity->targets.emplace_back( c );
+    }
+    return action_result{};
+}
+
+// "Use" (a), following avatar_funcs::use_item.  The client already picked
+// the use method when the item has several.
+action_result do_use( npc &guy, const JsonObject &jo )
+{
+    item *it = find_carried_item( guy, jo.get_int( "idx", -1 ), jo.get_string( "type", "" ),
+                                  jo.get_int( "ord", -1 ), jo.get_string( "name", "" ) );
+    if( it == nullptr ) {
+        return fail( _( "You no longer have that." ) );
+    }
+    const std::string method = jo.get_string( "method", "" );
+    const int before = guy.get_moves();
+    guy.last_item = it->typeId();
+    if( !method.empty() ) {
+        if( !it->type->use_methods.contains( method ) ) {
+            return fail( string_format( _( "You can't do that with your %s." ), it->tname() ) );
+        }
+        const auto can = it->type->use_methods.at( method ).can_call( guy, *it, false, guy.bub_pos() );
+        if( !can.success() ) {
+            return fail( can.str() );
+        }
+        guy.invoke_item( it, method, guy.bub_pos() );
+    } else if( it->type->has_use() ) {
+        if( it->type->use_methods.size() != 1 ) {
+            return fail( std::string() );
+        }
+        guy.invoke_item( it, it->type->use_methods.begin()->first, guy.bub_pos() );
+    } else if( it->is_tool() ) {
+        return fail( string_format( _( "You can't do anything interesting with your %s." ),
+                                    it->tname() ) );
+    } else if( !it->is_craft() && ( it->is_medication() || it->is_food() ||
+                                    it->get_contained().is_food() || it->get_contained().is_medication() ) ) {
+        guy.consume( *it );
+    } else if( it->is_book() ) {
+        return fail( _( "Use the read command for books." ) );
+    } else if( it->has_flag( flag_id( "SPLINT" ) ) ) {
+        const ret_val<bool> can = guy.can_wear( *it );
+        if( !can.success() ) {
+            return fail( can.str() );
+        }
+        guy.wear_possessed( *it, false );
+    } else {
+        return fail( string_format( _( "You can't do anything interesting with your %s." ),
+                                    it->tname() ) );
+    }
+    guy.recalculate_enchantment_cache();
+    guy.invalidate_crafting_inventory();
+    if( guy.get_moves() == before ) {
+        guy.mod_moves( -100 );
+    }
+    return action_result{};
+}
+
 action_result execute( peer_t &p, npc &guy, message &m )
 {
     JsonObject jo = m.object();
@@ -1418,10 +1600,27 @@ action_result execute( peer_t &p, npc &guy, message &m )
         return do_item_action( guy, a, jo );
     }
     if( a == "fire" ) {
-        return do_fire( guy, read_bub( jo ) );
+        return do_fire( guy, jo );
     }
     if( a == "craft" ) {
         return do_craft( guy, jo );
+    }
+    if( a == "examine" ) {
+        return do_examine( guy, read_bub( jo ) );
+    }
+    if( a == "read" ) {
+        return do_read( guy, jo );
+    }
+    if( a == "butcher" ) {
+        return do_butcher( guy, jo );
+    }
+    if( a == "use" ) {
+        return do_use( guy, jo );
+    }
+    if( a == "construct" ) {
+        const std::string err = try_start_construction( guy, construction_id( jo.get_string( "id", "" ) ),
+                                read_bub( jo ) );
+        return err.empty() ? action_result{} : fail( err );
     }
     if( a == "reload" ) {
         return do_reload( guy );
@@ -1448,8 +1647,7 @@ bool wait_for_action( int peer_id )
     int64_t last_turn_sent = started;
     std::unique_ptr<static_popup> notice;
     input_context ctxt( "COOP_WAIT" );
-    ctxt.register_action( "QUIT" );
-    ctxt.register_action( "CONFIRM" );
+    ctxt.register_action( "COOP_WAIT_MENU" );
     while( true ) {
         pump();
         peer_t *p = find_peer( peer_id );
@@ -1472,26 +1670,33 @@ bool wait_for_action( int peer_id )
         if( notice ) {
             const int secs = static_cast<int>( ( net::now_ms() - started ) / 1000 );
             notice->message( _( "Waiting for %s to act… (%d s)\n%s for options" ),
-                             p->name, secs, ctxt.get_desc( "QUIT" ) );
+                             p->name, secs, ctxt.get_desc( "COOP_WAIT_MENU" ) );
         }
         ui_manager::redraw();
         refresh_display();
         ctxt.set_timeout( 40 );
         const std::string action = ctxt.handle_input();
-        if( action == "QUIT" ) {
+        if( action == "COOP_WAIT_MENU" ) {
             uilist menu;
             menu.text = string_format( _( "%s has not acted yet." ), p->name );
             menu.addentry( 0, true, 'w', _( "Keep waiting" ) );
             menu.addentry( 1, true, 's', _( "Skip their turn" ) );
+            menu.addentry( 4, true, 'd', _( "Don't wait for them (until they act)" ) );
             menu.addentry( 2, true, 'c', _( "Chat" ) );
             menu.addentry( 3, true, 'k', _( "Disconnect them" ) );
             menu.query();
             if( menu.ret == 1 ) {
                 return false;
+            } else if( menu.ret == 4 ) {
+                p->dont_wait = true;
+                send_to_player( *p, m_warning,
+                                _( "The host stopped waiting for you.  Act whenever you are ready." ) );
+                return false;
             } else if( menu.ret == 2 ) {
                 open_chat();
             } else if( menu.ret == 3 ) {
-                net::host_close_peer( peer_id );
+                disconnect_peer( *p, _( "The host disconnected you." ) );
+                return false;
             }
         }
     }
@@ -1590,9 +1795,13 @@ void handle_line( int peer, const std::string &line )
         if( !p->action ) {
             p->action = line;
         }
+        p->dont_wait = false;
     } else if( t == "chat" ) {
         JsonObject jo = m.object();
         broadcast_chat( p->name, jo.get_string( "text", "" ) );
+    } else if( t == "answer" ) {
+        JsonObject jo = m.object();
+        answers[jo.get_int( "id", 0 )] = jo.get_int( "i", -1 );
     } else if( t == "stop_wait" ) {
         npc *proxy = proxy_of( *p );
         if( p->auto_wait_turns > 0 ) {
@@ -1671,9 +1880,9 @@ void kick_menu()
     }
     menu.query();
     if( menu.ret >= 0 && static_cast<size_t>( menu.ret ) < ids.size() ) {
-        send( ids[menu.ret], "{\"t\":\"bye\",\"msg\":" + json_quote( _( "The host disconnected you." ) ) +
-              "}" );
-        net::host_close_peer( ids[menu.ret] );
+        if( peer_t *p = find_peer( ids[menu.ret] ) ) {
+            disconnect_peer( *p, _( "The host disconnected you." ) );
+        }
     }
 }
 
@@ -1762,7 +1971,10 @@ bool host_proxy_turn( npc &guy )
             // and mission; a player's character must keep its own.
             const npc_attitude attitude = guy.get_attitude();
             const npc_mission mission = guy.mission;
-            guy.activity->do_turn( guy );
+            {
+                host::prompt_scope questions( peer_id );
+                guy.activity->do_turn( guy );
+            }
             if( guy.get_attitude() != attitude ) {
                 guy.set_attitude( attitude );
             }
@@ -1785,6 +1997,10 @@ bool host_proxy_turn( npc &guy )
                 guy.add_msg_if_player( m_info, _( "You finish waiting." ) );
             }
             continue;
+        }
+        if( !p->action && p->dont_wait ) {
+            guy.set_moves( 0 );
+            break;
         }
         if( !p->action ) {
             host::broadcast( host::sync_level::normal );
@@ -1813,6 +2029,7 @@ bool host_proxy_turn( npc &guy )
         try {
             JsonObject jo = m.object();
             seq = jo.get_int( "seq", 0 );
+            host::prompt_scope questions( peer_id );
             result = host::execute( *p, guy, m );
         } catch( const std::exception &e ) {
             log( std::string( "action failed: " ) + e.what() );
@@ -1860,6 +2077,63 @@ void host_died()
     if( is_host() ) {
         host::stop( _( "The host's game has ended." ) );
         set_role( role::none );
+    }
+}
+
+bool remote_prompts_active()
+{
+    return is_host() && host::prompt_peer >= 0;
+}
+
+void remote_message( const std::string &text )
+{
+    if( host::peer_t *p = host::find_peer( host::prompt_peer ) ) {
+        host::send_to_player( *p, m_info, remove_color_tags( text ) );
+    }
+}
+
+int remote_choice( const std::string &text, const std::vector<std::string> &options,
+                   const std::vector<bool> &enabled, bool allow_cancel )
+{
+    const int peer_id = host::prompt_peer;
+    host::peer_t *p = host::find_peer( peer_id );
+    if( p == nullptr || options.empty() ) {
+        return -1;
+    }
+    const std::string name = p->name;
+    const int id = host::next_question_id++;
+    std::string opts;
+    std::string en;
+    for( size_t i = 0; i < options.size(); ++i ) {
+        opts += ( i ? "," : "" ) + json_quote( remove_color_tags( options[i] ) );
+        en += ( i ? "," : "" ) + std::string( i < enabled.size() && !enabled[i] ? "false" : "true" );
+    }
+    host::send( peer_id, string_format( "{\"t\":\"ask\",\"id\":%d,\"text\":%s,\"opts\":[%s],\"en\":[%s],"
+                                        "\"cancel\":%s}", id, json_quote( remove_color_tags( text ) ), opts, en,
+                                        allow_cancel ? "true" : "false" ) );
+    // Wait for the answer; the rest of the game waits with us, as it would
+    // for a question on our own screen.
+    static_popup notice;
+    notice.on_top( true );
+    while( true ) {
+        // Questions asked while answering go to nobody else.
+        host::prompt_scope none( -1 );
+        pump();
+        const auto it = host::answers.find( id );
+        if( it != host::answers.end() ) {
+            const int answer = it->second;
+            host::answers.erase( it );
+            return answer >= 0 && answer < static_cast<int>( options.size() ) ? answer : -1;
+        }
+        p = host::find_peer( peer_id );
+        if( p == nullptr || !p->joined ) {
+            return -1;
+        }
+        notice.message( _( "Waiting for %s to answer a question…" ), name );
+        ui_manager::redraw();
+        refresh_display();
+        inp_mngr.pump_events();
+        std::this_thread::sleep_for( std::chrono::milliseconds( 20 ) );
     }
 }
 
