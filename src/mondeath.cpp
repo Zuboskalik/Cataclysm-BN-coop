@@ -25,6 +25,8 @@
 #include "mattack_actors.h"
 #include "mattack_common.h"
 #include "messages.h"
+#include "mp_session.h"
+#include "npc.h"
 #include "monster.h"
 #include "morale_types.h"
 #include "mtype.h"
@@ -108,6 +110,12 @@ void mdeath::normal( monster &z )
     if( g->u.sees( z ) ) {
         //Currently it is possible to get multiple messages that a monster died.
         add_msg( m_good, _( "The %s dies!" ), z.name() );
+    }
+    // Co-op: remote players are told too.
+    for( npc &guy : g->all_npcs() ) {
+        if( cata_mp::is_proxy( guy ) && guy.sees( z ) ) {
+            guy.add_msg_if_player( m_good, _( "The %s dies!" ), z.name() );
+        }
     }
 
     const int max_hp = std::max( z.get_hp_max(), 1 );

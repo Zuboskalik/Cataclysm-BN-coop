@@ -15,6 +15,7 @@
 #include <optional>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "action.h"
 #include "coordinates.h"
@@ -99,8 +100,22 @@ bool suppress_world_simulation();
 // Client: the mapbuffer stubbed out an OMT (4 submaps starting at `base`)
 // because the host has not sent it yet.
 void client_placeholder_created( const tripoint_abs_sm &base );
+// ---- questions asked while the host performs a remote player's action ----
+// While the host runs a remote player's action or activity, questions that
+// would pop up on the host's screen go to that player instead.
+bool remote_prompts_active();
+// Lets the remote player pick one of `options`.  Returns its index, or -1 if
+// they cancelled or left.
+int remote_choice( const std::string &text, const std::vector<std::string> &options,
+                   const std::vector<bool> &enabled, bool allow_cancel );
+// Shows a message to the remote player without waiting for an answer.
+void remote_message( const std::string &text );
+
 // Seed for picking the monster's sprite variant; the same on host and client.
 uintptr_t monster_sprite_seed( const monster &mon );
+// Client: asks the host to build `id` at `pnt`.  Returns false outside co-op
+// (the caller then builds locally as usual).
+bool client_request_construct( const std::string &id, const tripoint_bub_ms &pnt );
 // Host: features that skip turns in bulk would skip remote players' turns too.
 bool suppress_time_skipping();
 

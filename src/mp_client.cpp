@@ -15,17 +15,21 @@
 #include <thread>
 #include <unordered_map>
 
+#include "activity_actor_definitions.h"
 #include "avatar.h"
 #include "calendar.h"
 #include "character.h"
 #include "debug.h"
 #include "game.h"
 #include "game_constants.h"
+#include "construction.h"
 #include "crafting_gui.h"
 #include "game_inventory.h"
 #include "gun_mode.h"
+#include "iexamine.h"
 #include "input.h"
 #include "item.h"
+#include "itype.h"
 #include "item_handling_util.h"
 #include "line.h"
 #include "map/map.h"
@@ -47,6 +51,7 @@
 #include "pickup_token.h"
 #include "player_activity.h"
 #include "popup.h"
+#include "ranged.h"
 #include "recipe.h"
 #include "string_formatter.h"
 #include "string_input_popup.h"
@@ -54,6 +59,8 @@
 #include "translations.h"
 #include "ui.h"
 #include "ui_manager.h"
+#include "trap.h"
+#include "vehicle/vpart_position.h"
 #include "weather/weather.h"
 #include "world.h"
 #include "worldfactory.h"
@@ -710,7 +717,9 @@ void request_craft( const bool is_long, const bool again )
                                          json_quote( id.str() ), std::max( 1, batch ), is_long ? "true" : "false" ) );
 }
 
-// Picks a target for the wielded gun; the host does the shooting.
+// Aiming and firing the wielded gun.  The usual targeting UI runs here on
+// our copy of the character, with time to spare so a whole aim fits in one
+// go; the host then fires with the aim we reached and takes the time spent.
 void request_fire()
 {
     avatar &u = get_avatar();
@@ -718,36 +727,38 @@ void request_fire()
         add_msg( m_info, _( "You are not wielding a gun." ) );
         return;
     }
-    const item &gun = u.primary_weapon();
-    const int range = std::max( 1, gun.gun_range( &u ) );
-    std::vector<Creature *> targets = g->get_creatures_if( [&]( const Creature & c ) {
-        return &c != &u && c.is_monster() && u.sees( c ) &&
-               rl_dist( u.bub_pos(), c.bub_pos() ) <= range &&
-               c.attitude_to( u ) == Attitude::A_HOSTILE;
-    } );
-    std::sort( targets.begin(), targets.end(), [&u]( const Creature * a, const Creature * b ) {
-        return rl_dist( u.bub_pos(), a->bub_pos() ) < rl_dist( u.bub_pos(), b->bub_pos() );
-    } );
-    uilist menu;
-    menu.text = string_format( _( "Fire your %1$s (%2$s, %3$d rounds left) at:" ), gun.tname(),
-                               gun.gun_current_mode().tname(), gun.ammo_remaining() );
-    for( size_t i = 0; i < targets.size(); ++i ) {
-        menu.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, string_format( _( "%1$s (%2$d)" ),
-                       targets[i]->disp_name(), rl_dist( u.bub_pos(), targets[i]->bub_pos() ) ) );
-    }
-    const int pick_spot = static_cast<int>( targets.size() );
-    menu.addentry( pick_spot, true, 's', _( "Choose a spot…" ) );
-    menu.query();
-    std::optional<tripoint_bub_ms> target;
-    if( menu.ret >= 0 && menu.ret < pick_spot ) {
-        target = targets[menu.ret]->bub_pos();
-    } else if( menu.ret == pick_spot ) {
-        target = g->look_around();
-    }
-    if( !target || *target == u.bub_pos() ) {
+    if( u.primary_weapon().is_gunmod() ) {
+        add_msg( m_info, _( "The %s must be attached to a gun, it can not be fired separately." ),
+                 u.primary_weapon().tname() );
         return;
     }
-    send_action( "fire", pos_fields( *target ) );
+    constexpr int budget = 100000;
+    std::unique_ptr<aim_activity_actor> aim = aim_activity_actor::use_wielded();
+    target_handler::trajectory trajectory;
+    int spent = 0;
+    // An empty result without abort means "aimed as well as possible and
+    // waited": keep going, as the next turn would.
+    for( int round = 0; round < 8 && trajectory.empty() && !aim->aborted; ++round ) {
+        u.set_moves( budget );
+        trajectory = target_handler::mode_fire( u, *aim );
+        spent += budget - std::max( 0, u.get_moves() );
+    }
+    if( aim->aborted ) {
+        if( aim->reload_requested ) {
+            send_action( "reload" );
+        }
+        return;
+    }
+    if( trajectory.empty() ) {
+        return;
+    }
+    const tripoint_bub_ms target = trajectory.back();
+    if( target == u.bub_pos() ) {
+        return;
+    }
+    send_action( "fire", pos_fields( target ) +
+                 string_format( ",\"recoil\":%.3f,\"aim_moves\":%d,\"mode\":%s", u.recoil, spent,
+                                json_quote( u.primary_weapon().gun_get_mode_id().str() ) ) );
 }
 
 // The wield menu also offers items lying next to the character.
@@ -783,14 +794,202 @@ void request_item_action( const std::string &name, item *it )
     send_action( name, item_fields( it ) );
 }
 
+void request_use( item *it );
+
+// Inventory: look at an item and pick what to do with it.  The host does it.
 void view_inventory()
 {
     avatar &u = get_avatar();
-    item *it = game_menus::inv::titled_menu( u, _( "Inventory (view only in co-op)" ) );
+    item *it = game_menus::inv::titled_menu( u, _( "Inventory" ) );
     if( it == nullptr ) {
         return;
     }
-    popup( "%s\n\n%s", it->display_name(), it->info_string() );
+    enum { act_info, act_wield, act_wear, act_takeoff, act_eat, act_drop, act_use };
+    uilist menu;
+    menu.text = it->display_name();
+    menu.addentry( act_info, true, 'i', _( "Examine" ) );
+    menu.addentry( act_wield, !u.is_worn( *it ), 'w',
+                   u.is_wielding( *it ) ? _( "Put away" ) : _( "Wield" ) );
+    if( u.is_worn( *it ) ) {
+        menu.addentry( act_takeoff, true, 'T', _( "Take off" ) );
+    } else if( it->is_armor() ) {
+        menu.addentry( act_wear, true, 'W', _( "Wear" ) );
+    }
+    if( it->is_comestible() ) {
+        menu.addentry( act_eat, true, 'E', _( "Eat / drink / use" ) );
+    }
+    if( it->type->has_use() ) {
+        menu.addentry( act_use, true, 'a', _( "Use" ) );
+    }
+    menu.addentry( act_drop, true, 'd', _( "Drop" ) );
+    menu.query();
+    if( menu.ret == act_info ) {
+        popup( "%s\n\n%s", it->display_name(), it->info_string() );
+        return;
+    }
+    if( menu.ret < 0 ) {
+        return;
+    }
+    if( !S.my_turn || S.awaiting_ack ) {
+        add_msg( m_info, _( "Not your turn yet: %s is acting." ), S.host_name );
+        return;
+    }
+    switch( menu.ret ) {
+        case act_wield:
+            if( u.is_wielding( *it ) ) {
+                send_action( "unwield" );
+            } else {
+                request_item_action( "wield", it );
+            }
+            break;
+        case act_wear:
+            request_item_action( "wear", it );
+            break;
+        case act_takeoff:
+            request_item_action( "takeoff", it );
+            break;
+        case act_eat:
+            request_item_action( "eat", it );
+            break;
+        case act_use:
+            request_use( it );
+            break;
+        case act_drop:
+            send_action( "drop", string_format( ",\"items\":[[%d,0,%s,%d,%s]]", item_index_of( u, it ),
+                                                json_quote( it->typeId().str() ), item_type_ordinal( u, it ),
+                                                json_quote( item_match_name( *it ) ) ) );
+            break;
+        default:
+            break;
+    }
+}
+
+// "Use" (a): pick the item, and the use method when it has several (like
+// avatar::invoke_item does); the host performs it.
+void request_use( item *it )
+{
+    avatar &u = get_avatar();
+    if( it == nullptr ) {
+        it = game_menus::inv::use( u );
+        if( it == nullptr ) {
+            return;
+        }
+    }
+    if( item_index_of( u, it ) < 0 ) {
+        add_msg( m_info, _( "Pick it up first to use it in co-op." ) );
+        return;
+    }
+    std::string method;
+    const auto &methods = it->type->use_methods;
+    if( it->type->has_use() && methods.size() > 1 ) {
+        uilist umenu;
+        umenu.text = string_format( _( "What to do with your %s?" ), it->tname() );
+        umenu.hilight_disabled = true;
+        for( const auto &e : methods ) {
+            const auto res = e.second.can_call( u, *it, false, u.bub_pos() );
+            umenu.addentry_desc( MENU_AUTOASSIGN, res.success(), MENU_AUTOASSIGN, e.second.get_name(),
+                                 res.str() );
+        }
+        umenu.query();
+        if( umenu.ret < 0 || umenu.ret >= static_cast<int>( methods.size() ) ) {
+            return;
+        }
+        method = std::next( methods.begin(), umenu.ret )->first;
+    }
+    send_action( "use", item_fields( it ) + ",\"method\":" + json_quote( method ) );
+}
+
+// Butcher (B): corpses on our tile; the host runs the butchering activity,
+// which checks tools, light and so on itself.
+void request_butcher()
+{
+    avatar &u = get_avatar();
+    map &here = get_map();
+    std::vector<item *> ground;
+    std::vector<int> corpses;
+    for( item *it : here.i_at( u.bub_pos() ) ) {
+        if( it->is_corpse() ) {
+            corpses.push_back( static_cast<int>( ground.size() ) );
+        }
+        ground.push_back( it );
+    }
+    if( corpses.empty() ) {
+        add_msg( m_info, _( "There are no corpses here to butcher." ) );
+        return;
+    }
+    std::vector<int> chosen;
+    if( corpses.size() == 1 ) {
+        chosen = corpses;
+    } else {
+        uilist cmenu;
+        cmenu.text = _( "Butcher what?" );
+        for( size_t i = 0; i < corpses.size(); ++i ) {
+            cmenu.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, ground[corpses[i]]->display_name() );
+        }
+        cmenu.addentry( static_cast<int>( corpses.size() ), true, 'a', _( "All corpses" ) );
+        cmenu.query();
+        if( cmenu.ret < 0 ) {
+            return;
+        }
+        if( cmenu.ret == static_cast<int>( corpses.size() ) ) {
+            chosen = corpses;
+        } else {
+            chosen.push_back( corpses[cmenu.ret] );
+        }
+    }
+    const std::vector<std::pair<std::string, std::string>> kinds = {
+        { "ACT_BUTCHER", _( "Quick butchery" ) },
+        { "ACT_BUTCHER_FULL", _( "Full butchery" ) },
+        { "ACT_FIELD_DRESS", _( "Field dress corpse" ) },
+        { "ACT_SKIN", _( "Skin corpse" ) },
+        { "ACT_BLEED", _( "Bleed corpse" ) },
+        { "ACT_QUARTER", _( "Quarter corpse" ) },
+        { "ACT_DISMEMBER", _( "Dismember corpse" ) },
+        { "ACT_DISSECT", _( "Dissect corpse" ) },
+    };
+    uilist kmenu;
+    kmenu.text = _( "Choose type of butchery:" );
+    for( size_t i = 0; i < kinds.size(); ++i ) {
+        kmenu.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, kinds[i].second );
+    }
+    kmenu.query();
+    if( kmenu.ret < 0 || kmenu.ret >= static_cast<int>( kinds.size() ) ) {
+        return;
+    }
+    std::string list;
+    for( const int idx : chosen ) {
+        const item *c = ground[idx];
+        const int ordinal = static_cast<int>( std::count_if( ground.begin(), ground.begin() + idx,
+        [c]( const item * g ) {
+            return g->typeId() == c->typeId();
+        } ) );
+        list += list.empty() ? "" : ",";
+        list += string_format( "[%d,0,%s,%d]", idx, json_quote( c->typeId().str() ), ordinal );
+    }
+    send_action( "butcher", ",\"kind\":" + json_quote( kinds[kmenu.ret].first ) +
+                 ",\"items\":[" + list + "]" );
+}
+
+// Tab: hit the weakest adjacent hostile, which the host does as a move into it.
+void request_autoattack()
+{
+    avatar &u = get_avatar();
+    Creature *best = nullptr;
+    for( Creature *c : g->get_creatures_if( [&u]( const Creature & c ) {
+    return &c != &u && rl_dist( u.bub_pos(), c.bub_pos() ) == 1 &&
+           c.bub_pos().z() == u.bub_pos().z() && c.attitude_to( u ) == Attitude::A_HOSTILE &&
+           u.sees( c );
+    } ) ) {
+        if( best == nullptr || c->get_hp() < best->get_hp() ) {
+            best = c;
+        }
+    }
+    if( best == nullptr ) {
+        add_msg( m_info, _( "No hostile creature in reach." ) );
+        return;
+    }
+    const tripoint_rel_ms d = best->bub_pos() - u.bub_pos();
+    send_action( "move", string_format( ",\"dx\":%d,\"dy\":%d", d.x(), d.y() ) );
 }
 
 bool is_local_ui_action( action_id act )
@@ -918,6 +1117,32 @@ void handle_line( const std::string &line )
     } else if( t == "chat" ) {
         JsonObject jo = m.object();
         add_msg( m_info, "<color_light_cyan>%s</color>", jo.get_string( "text", "" ) );
+    } else if( t == "ask" ) {
+        // A question raised by our action on the host; it waits for the answer.
+        JsonObject jo = m.object();
+        std::vector<std::string> opts;
+        std::vector<bool> en;
+        jo.read( "opts", opts );
+        jo.read( "en", en );
+        uilist menu;
+        menu.text = jo.get_string( "text", "" );
+        menu.allow_cancel = jo.get_bool( "cancel", false );
+        for( size_t i = 0; i < opts.size(); ++i ) {
+            menu.addentry( static_cast<int>( i ), i >= en.size() || en[i], MENU_AUTOASSIGN, opts[i] );
+        }
+        const bool any_enabled = std::any_of( menu.entries.begin(), menu.entries.end(),
+        []( const uilist_entry & e ) {
+            return e.enabled;
+        } );
+        int pick = -1;
+        if( any_enabled ) {
+            do {
+                menu.query();
+                pick = menu.ret;
+            } while( !menu.allow_cancel && ( pick < 0 || pick >= static_cast<int>( opts.size() ) ) );
+        }
+        send( string_format( "{\"t\":\"answer\",\"id\":%d,\"i\":%d}", jo.get_int( "id", 0 ), pick ) );
+        g->invalidate_main_ui_adaptor();
     } else if( t == "bye" ) {
         JsonObject jo = m.object();
         S.end_reason = jo.get_string( "msg", _( "The host ended the session." ) );
@@ -1328,6 +1553,30 @@ bool client_intercept_action( action_id act,
             }
             return true;
         }
+        case ACTION_EXAMINE: {
+            std::optional<tripoint_bub_ms> p = mouse_target;
+            if( !p ) {
+                p = choose_adjacent( _( "Examine where?" ), true );
+            }
+            if( !p ) {
+                return true;
+            }
+            map &here = get_map();
+            const bool special = here.has_flag( "CONSOLE", *p ) || here.veh_at( *p ) ||
+                                 !here.tr_at( *p ).is_null() ||
+                                 ( here.has_furn( *p ) ? here.furn( *p ).obj().examine != &iexamine::none :
+                                   here.ter( *p ).obj().examine != &iexamine::none );
+            if( special ) {
+                client::send_action( "examine", client::pos_fields( *p ) );
+            } else if( !here.i_at( *p ).empty() ) {
+                client::request_pickup( *p );
+            } else if( here.has_flag( "CONTAINER", *p ) ) {
+                add_msg( _( "It is empty." ) );
+            } else {
+                add_msg( _( "There is nothing special about the %s." ), here.name( *p ) );
+            }
+            return true;
+        }
         case ACTION_PICKUP:
         case ACTION_PICKUP_ALL: {
             std::optional<tripoint_bub_ms> p = mouse_target;
@@ -1370,6 +1619,38 @@ bool client_intercept_action( action_id act,
             return true;
         case ACTION_FIRE:
             client::request_fire();
+            return true;
+        case ACTION_AUTOATTACK:
+            client::request_autoattack();
+            return true;
+        case ACTION_USE:
+            client::request_use( nullptr );
+            return true;
+        case ACTION_BUTCHER:
+            client::request_butcher();
+            return true;
+        case ACTION_READ: {
+            item *book = game_menus::inv::read( u );
+            if( book == nullptr ) {
+                return true;
+            }
+            if( item_index_of( u, book ) < 0 ) {
+                add_msg( m_info, _( "Pick it up first to read it in co-op." ) );
+                return true;
+            }
+            client::send_action( "read", client::item_fields( book ) );
+            return true;
+        }
+        case ACTION_USE_WIELDED:
+            if( u.is_armed() ) {
+                client::request_use( &u.primary_weapon() );
+            } else {
+                add_msg( m_info, _( "You are not wielding anything you could use." ) );
+            }
+            return true;
+        case ACTION_CONSTRUCT:
+            // The usual menu; picking a spot sends the request to the host.
+            construction_menu( false );
             return true;
         case ACTION_CRAFT:
         case ACTION_LONGCRAFT:
@@ -1428,6 +1709,15 @@ bool input_should_return()
 
 namespace cata_mp
 {
+bool client_request_construct( const std::string &id, const tripoint_bub_ms &pnt )
+{
+    if( !is_client() ) {
+        return false;
+    }
+    client::send_action( "construct", client::pos_fields( pnt ) + ",\"id\":" + json_quote( id ) );
+    return true;
+}
+
 uintptr_t monster_sprite_seed( const monster &mon )
 {
     if( is_client() ) {

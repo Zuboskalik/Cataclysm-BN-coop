@@ -32,6 +32,7 @@
 #include "map/mapdata.h"
 #include "map_iterator.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "mod_manager.h"
 #include "morale_types.h"
 #include "mtype.h"
@@ -1654,8 +1655,39 @@ void place_construction( const construction_group_str_id &group )
                  _( "There is already an unfinished construction there, examine it to continue working on it" ) );
         return;
     }
-    std::vector<detached_ptr<item>> used;
     const construction &con = *valid.find( pnt )->second;
+    // Co-op: the host builds it, with the client's character.
+    if( cata_mp::client_request_construct( con.id.str(), pnt ) ) {
+        return;
+    }
+    start_construction( g->u, con, pnt );
+}
+
+std::string try_start_construction( Character &who, const construction_id &id,
+                                    const tripoint_bub_ms &pnt )
+{
+    if( !id.is_valid() ) {
+        return _( "Unknown construction." );
+    }
+    const construction &con = id.obj();
+    map &here = get_map();
+    if( rl_dist( who.bub_pos(), pnt ) != 1 || !here.inbounds( pnt ) ) {
+        return _( "That is too far away." );
+    }
+    if( here.partial_con_at( pnt ) ) {
+        return _( "There is already an unfinished construction there, examine it to continue working on it" );
+    }
+    if( !can_construct( con, pnt ) || !player_can_build( who, who.crafting_inventory(), con ) ) {
+        return _( "You can't build that!" );
+    }
+    start_construction( who, con, pnt );
+    return std::string();
+}
+
+void start_construction( Character &who, const construction &con, const tripoint_bub_ms &pnt )
+{
+    map &here = get_map();
+    std::vector<detached_ptr<item>> used;
     // create the partial construction struct
     std::unique_ptr<partial_con> pc = std::make_unique<partial_con>( pnt,
                                       get_map().get_bound_dimension() );
@@ -1670,7 +1702,7 @@ void place_construction( const construction_group_str_id &group )
     }
     // Use up the components
     for( const auto &it : con.requirements->get_components() ) {
-        std::vector<detached_ptr<item>> tmp = g->u.consume_items( it, 1, is_crafting_component );
+        std::vector<detached_ptr<item>> tmp = who.consume_items( it, 1, is_crafting_component );
         used.insert( used.end(), std::make_move_iterator( tmp.begin() ),
                      std::make_move_iterator( tmp.end() ) );
     }
@@ -1679,9 +1711,9 @@ void place_construction( const construction_group_str_id &group )
     }
     here.partial_con_set( pnt, std::move( pc ) );
     for( const auto &it : con.requirements->get_tools() ) {
-        g->u.consume_tools( it );
+        who.consume_tools( it );
     }
-    g->u.assign_activity( std::make_unique<player_activity>
+    who.assign_activity( std::make_unique<player_activity>
                           ( std::make_unique<construction_activity_actor>
                             ( bub_to_abs( pnt ) ) ) );
 }

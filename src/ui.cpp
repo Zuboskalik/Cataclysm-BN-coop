@@ -15,6 +15,7 @@
 #include "game.h"
 #include "ime.h"
 #include "input.h"
+#include "mp_session.h"
 #include "output.h"
 #include "player.h"
 #include "string_input_popup.h"
@@ -1049,6 +1050,28 @@ void uilist::query( bool loop, int timeout )
     keypress = 0;
     if( entries.empty() ) {
         ret = UILIST_ERROR;
+        return;
+    }
+    // Co-op: the menu belongs to the remote player whose action the host is
+    // running right now.
+    if( cata_mp::remote_prompts_active() ) {
+        std::vector<std::string> labels;
+        std::vector<bool> enabled;
+        for( const uilist_entry &e : entries ) {
+            labels.push_back( e.txt );
+            enabled.push_back( e.enabled );
+        }
+        std::string question = title;
+        if( !text.empty() ) {
+            question += question.empty() ? text : "\n" + text;
+        }
+        const int pick = cata_mp::remote_choice( question, labels, enabled, allow_cancel );
+        if( pick >= 0 ) {
+            selected = pick;
+            ret = entries[pick].retval;
+        } else {
+            ret = UILIST_CANCEL;
+        }
         return;
     }
     ret = UILIST_WAIT_INPUT;

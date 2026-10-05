@@ -127,6 +127,11 @@ void override_build_times( time_duration time );
 
 std::optional<construction_id> construction_menu( bool blueprint );
 void complete_construction( Character &who, tripoint_abs_ms &where );
+/** Uses up the components and starts building `con` at `pnt` (all checks done by the caller). */
+void start_construction( Character &who, const construction &con, const tripoint_bub_ms &pnt );
+/** Checks and starts a construction for `who`.  Returns why it can't be built, or "" on success. */
+std::string try_start_construction( Character &who, const construction_id &id,
+                                    const tripoint_bub_ms &pnt );
 bool can_construct( const construction &con, const tripoint_bub_ms &p );
 bool player_can_build( Character &ch, const inventory &inv, const construction &con );
 
