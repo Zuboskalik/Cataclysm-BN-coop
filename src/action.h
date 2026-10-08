@@ -367,6 +367,8 @@ enum action_id : int {
     ACTION_COOP_CHAT,
     /** Co-op: session menu (status, addresses, leave/kick) */
     ACTION_COOP_MENU,
+    /** Co-op host: options for the other players (stop their waiting, kick...) */
+    ACTION_COOP_PLAYERS,
     /** Not an action, serves as count of enumerated actions */
     NUM_ACTIONS
     /**@}*/

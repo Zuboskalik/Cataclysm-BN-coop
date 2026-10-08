@@ -9968,6 +9968,10 @@ void game::pre_print_all_tile_info( const tripoint_bub_ms &lp, const catacurses:
 
 std::optional<tripoint_bub_ms> game::look_around( look_around_mode mode )
 {
+    // Co-op: picking a spot during a remote player's action is theirs to do.
+    if( cata_mp::remote_prompts_active() ) {
+        return cata_mp::remote_tile( _( "Select a target point." ) );
+    }
     auto center = u.bub_pos() + u.view_offset;
     look_around_result result = look_around( /*show_window=*/true, center, center, false, false,
                                 false, false, tripoint_bub_ms::zero(), mode );

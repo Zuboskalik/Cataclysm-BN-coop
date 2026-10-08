@@ -472,6 +472,9 @@ class inventory_selector
         /** Remove all items */
         void clear_items();
         /** Assigns a title that will be shown on top of the menu. */
+        const std::string &get_title() const {
+            return title;
+        }
         void set_title( const std::string &title ) {
             this->title = title;
         }

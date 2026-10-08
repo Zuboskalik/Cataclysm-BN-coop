@@ -61,6 +61,7 @@
 #include "math_defines.h"
 #include "memorial_logger.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "mission.h"
 #include "monster.h"
 #include "morale.h"
@@ -5752,7 +5753,9 @@ void Character::update_stomach( const time_duration &duration )
     // No food/thirst/fatigue clock at all
     const bool debug_ls = has_trait( trait_DEBUG_LS );
     // No food/thirst, capped fatigue clock (only up to tired)
-    const bool npc_no_food = is_npc() && get_option<bool>( "NO_NPC_FOOD" );
+    // Co-op players' characters (NPCs on the host) eat and drink like players.
+    const bool npc_no_food = is_npc() && !cata_mp::is_proxy( *this ) &&
+                             get_option<bool>( "NO_NPC_FOOD" );
     const bool foodless = debug_ls || npc_no_food;
     const bool mouse = has_trait( trait_NO_THIRST );
     const bool mycus = has_trait( trait_M_DEPENDENT );
@@ -5797,7 +5800,9 @@ void Character::update_needs( int rate_multiplier )
     // No food/thirst/fatigue clock at all
     const bool debug_ls = has_trait( trait_DEBUG_LS );
     // No food/thirst, capped fatigue clock (only up to tired)
-    const bool npc_no_food = is_npc() && get_option<bool>( "NO_NPC_FOOD" );
+    // Co-op players' characters (NPCs on the host) eat and drink like players.
+    const bool npc_no_food = is_npc() && !cata_mp::is_proxy( *this ) &&
+                             get_option<bool>( "NO_NPC_FOOD" );
     const bool asleep = !sleep.is_null();
     const bool lying = asleep || has_effect( effect_lying_down ) ||
                        activity->id() == ACT_TRY_SLEEP;

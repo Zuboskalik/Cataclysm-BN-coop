@@ -2330,6 +2330,13 @@
   },
   {
     "type": "keybinding",
+    "name": "Co-op: options for other players",
+    "category": "DEFAULTMODE",
+    "id": "coop_players",
+    "bindings": [ { "input_method": "keyboard", "key": "F2" } ]
+  },
+  {
+    "type": "keybinding",
     "name": "Co-op: options while waiting for a player",
     "category": "COOP_WAIT",
     "id": "COOP_WAIT_MENU",

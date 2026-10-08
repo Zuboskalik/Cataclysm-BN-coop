@@ -25,6 +25,7 @@
 #include "map/mapdata.h"
 #include "map_iterator.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "monster.h"
 #include "mtype.h"
 #include "output.h"
@@ -354,7 +355,7 @@ void vehicle::control_electronics() {
     } while (valid_option);
 }
 
-void vehicle::control_engines() {
+void vehicle::control_engines(Character* who) {
     int e_toggle = 0;
     // count active engines
     const int fuel_count = std::accumulate(engines.begin(), engines.end(), 0, [&](int acc, int e) {
@@ -399,11 +400,11 @@ void vehicle::control_engines() {
 
     if (engines_were_on && !engine_on) {
         add_msg(_("You turn off the %s's engines to change their configurations."), name);
-    } else if (!g->u.controlling_vehicle) {
+    } else if (!(who != nullptr ? who->controlling_vehicle : g->u.controlling_vehicle)) {
         add_msg(_("You change the %s's engine configuration."), name);
     }
 
-    if (engine_on) { start_engines(); }
+    if (engine_on) { start_engines(false, false, who); }
 }
 
 auto vehicle::select_engine() -> int {
@@ -627,13 +628,15 @@ void vehicle::toggle_brake_hold() {
     add_msg(brake_hold ? _("Brake hold turned on.") : _("Brake hold turned off."));
 }
 
-void vehicle::use_controls(const tripoint_bub_ms& pos) {
+void vehicle::use_controls(const tripoint_bub_ms& pos, Character* who) {
     std::vector<uilist_entry> options;
     std::vector<std::function<void()>> actions;
 
-    bool remote = g->remoteveh() == this;
+    // Co-op: a remote player's character can use the controls too; remote
+    // controls stay the avatar's.
+    Character& you = who != nullptr ? *who : get_avatar();
+    bool remote = you.is_avatar() && g->remoteveh() == this;
     bool has_electronic_controls = false;
-    avatar& you = get_avatar();
     const auto confirm_stop_driving = [this] {
         return !is_flying_in_air() || has_sufficient_lift(true, true) || !has_part(VPFLAG_WING)
             || query_yn(_("Really let go of controls while flying?  This will result in a crash."));
@@ -645,7 +648,7 @@ void vehicle::use_controls(const tripoint_bub_ms& pos) {
             if (confirm_stop_driving()) {
                 you.controlling_vehicle = false;
                 g->setremoteveh(nullptr);
-                add_msg(_("You stop controlling the vehicle."));
+                you.add_msg_if_player(_("You stop controlling the vehicle."));
                 refresh();
             }
         });
@@ -658,7 +661,7 @@ void vehicle::use_controls(const tripoint_bub_ms& pos) {
             actions.emplace_back([&] {
                 if (confirm_stop_driving()) {
                     you.controlling_vehicle = false;
-                    add_msg(_("You let go of the controls."));
+                    you.add_msg_if_player(_("You let go of the controls."));
                     refresh();
                 }
             });
@@ -668,7 +671,7 @@ void vehicle::use_controls(const tripoint_bub_ms& pos) {
     }
 
     if (get_parts_at(pos, "CONTROLS", part_status_flag::any).empty() && !has_electronic_controls) {
-        add_msg(m_info, _("No controls there"));
+        you.add_msg_if_player(m_info, _("No controls there"));
         return;
     }
 
@@ -684,7 +687,7 @@ void vehicle::use_controls(const tripoint_bub_ms& pos) {
                 if (!confirm_stop_driving()) {
                     return;
                 } else if (engine_on && has_engine_type_not(fuel_type_muscle, true)) {
-                    add_msg(_("You turn the engine off and let go of the controls."));
+                    you.add_msg_if_player(_("You turn the engine off and let go of the controls."));
                     sound_event se;
                     se.origin = pos;
                     se.volume = 40;
@@ -693,7 +696,7 @@ void vehicle::use_controls(const tripoint_bub_ms& pos) {
                     se.description = _("the engine go silent");
                     sounds::sound(se);
                 } else {
-                    add_msg(_("You let go of the controls."));
+                    you.add_msg_if_player(_("You let go of the controls."));
                 }
 
                 for (size_t e = 0; e < engines.size(); ++e) {
@@ -739,7 +742,7 @@ void vehicle::use_controls(const tripoint_bub_ms& pos) {
                     sounds::sound(se);
                     stop_engines();
                 } else {
-                    start_engines();
+                    start_engines(false, false, &you);
                 }
                 refresh();
             });
@@ -766,7 +769,7 @@ void vehicle::use_controls(const tripoint_bub_ms& pos) {
         keybind("TOGGLE_CRUISE_CONTROL"));
     actions.emplace_back([&] {
         cruise_on = !cruise_on;
-        add_msg(cruise_on ? _("Cruise control turned on") : _("Cruise control turned off"));
+        you.add_msg_if_player(cruise_on ? _("Cruise control turned on") : _("Cruise control turned off"));
         refresh();
     });
 
@@ -802,7 +805,7 @@ void vehicle::use_controls(const tripoint_bub_ms& pos) {
     if (has_part("ENGINE")) {
         options.emplace_back(_("Control individual engines"), keybind("CONTROL_ENGINES"));
         actions.emplace_back([&] {
-            control_engines();
+            control_engines(&you);
             refresh();
         });
     }
@@ -819,13 +822,14 @@ void vehicle::use_controls(const tripoint_bub_ms& pos) {
             options.emplace_back(_("Trigger alarm"), keybind("TOGGLE_ALARM"));
             actions.emplace_back([&] {
                 is_alarm_on = true;
-                add_msg(_("You trigger the alarm"));
+                you.add_msg_if_player(_("You trigger the alarm"));
                 refresh();
             });
         }
     }
 
-    if (has_part("TURRET")) {
+    if (has_part("TURRET") && you.is_avatar()) {
+        avatar& you = get_avatar();
         std::vector<vehicle_part*> turrets;
         for (auto& p : parts) {
             if (p.is_turret() && !is_manual_turret(p)) { turrets.push_back(&p); }
@@ -902,7 +906,7 @@ void vehicle::use_controls(const tripoint_bub_ms& pos) {
     if (menu.ret >= 0) {
         // allow player to turn off engine without triggering another warning
         if (menu.ret != 0 && menu.ret != 1 && menu.ret != 2 && menu.ret != 3) {
-            if (!handle_potential_theft(you)) { return; }
+            if (you.is_avatar() && !handle_potential_theft(get_avatar())) { return; }
         }
         actions[menu.ret]();
         // Don't access `this` from here on, one of the actions above is to call
@@ -1188,7 +1192,8 @@ void vehicle::stop_engines() {
     sfx::do_vehicle_engine_sfx();
 }
 
-void vehicle::start_engines(const bool take_control, const bool autodrive) {
+void vehicle::start_engines(const bool take_control, const bool autodrive, Character* driver) {
+    Character& who = driver != nullptr ? *driver : static_cast<Character&>(g->u);
     bool has_engine = std::any_of(engines.begin(), engines.end(), [&](int idx) {
         return parts[idx].enabled && !parts[idx].is_broken();
     });
@@ -1217,9 +1222,9 @@ void vehicle::start_engines(const bool take_control, const bool autodrive) {
 
     if (!has_starting_engine_position) { starting_engine_position = abs_ms_location(); }
 
-    if (take_control && !g->u.controlling_vehicle) {
-        g->u.controlling_vehicle = true;
-        add_msg(_("You take control of the %s."), name);
+    if (take_control && !who.controlling_vehicle) {
+        who.controlling_vehicle = true;
+        who.add_msg_if_player(_("You take control of the %s."), name);
     }
 
     if (!has_engine) {
@@ -1228,9 +1233,9 @@ void vehicle::start_engines(const bool take_control, const bool autodrive) {
     }
 
     if (!autodrive) {
-        g->u.assign_activity(ACT_START_ENGINES, start_time);
-        g->u.activity->placement = starting_engine_position;
-        g->u.activity->values.push_back(take_control);
+        who.assign_activity(ACT_START_ENGINES, start_time);
+        who.activity->placement = starting_engine_position;
+        who.activity->values.push_back(take_control);
     }
 }
 
@@ -1862,12 +1867,14 @@ void vehicle::use_bike_rack(int part) {
 }
 
 // Handles interactions with a vehicle in the examine menu.
-void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part) {
-    avatar& you = get_avatar();
+void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part, Character* who) {
+    // Co-op: a remote player's character can interact too; the few uses that
+    // only work for the avatar are refused for it below.
+    Character& you = who != nullptr ? *who : get_avatar();
     map& here = get_map();
     std::vector<std::string> menu_items;
     std::vector<uilist_entry> options_message;
-    const bool has_items_on_ground = here.sees_some_items(pos, g->u);
+    const bool has_items_on_ground = here.sees_some_items(pos, you);
     const bool items_are_sealed = here.has_flag("SEALED", pos);
 
     auto turret = turret_query(bub_to_abs(pos));
@@ -2008,7 +2015,22 @@ void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part) {
         choice = selectmenu.ret;
     }
     if (choice != EXAMINE && choice != TRACK && choice != GET_ITEMS_ON_GROUND) {
-        if (!handle_potential_theft(you)) { return; }
+        if (you.is_avatar() && !handle_potential_theft(get_avatar())) { return; }
+    }
+    if (!you.is_avatar()) {
+        switch (choice) {
+            case EXAMINE:
+            case USE_BIKE_RACK:
+            case USE_HARNESS:
+            case USE_MONSTER_CAPTURE:
+            case UNLOAD_TURRET:
+            case RELOAD_TURRET:
+            case RELOAD_PLANTER:
+                you.add_msg_if_player(m_info, _("That is not available in co-op yet."));
+                return;
+            default:
+                break;
+        }
     }
     auto veh_tool = [&](const itype_id& obj) {
         item& pseudo = *item::spawn_temporary(obj);
@@ -2035,7 +2057,13 @@ void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part) {
             return;
         }
         case PEEK_CURTAIN: {
-            add_msg(_("You carefully peek through the curtains."));
+            you.add_msg_if_player(_("You carefully peek through the curtains."));
+            // Co-op: a remote player looks on their own screen.
+            if (!you.is_avatar()) {
+                cata_mp::remote_peek(you.bub_pos() - pos);
+                you.mod_moves(-100);
+                return;
+            }
             g->peek(you.bub_pos() - pos);
             return;
         }
@@ -2044,19 +2072,19 @@ void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part) {
             return;
         }
         case USE_TOWEL: {
-            iuse::towel_common(&you, nullptr, false);
+            iuse::towel_common(you.as_player(), nullptr, false);
             return;
         }
         case USE_SHOWER: {
-            cata::run_lua_examine("PLUMBING_SHOWER_EXAMINE", you, pos);
+            cata::run_lua_examine("PLUMBING_SHOWER_EXAMINE", *you.as_player(), pos);
             return;
         }
         case USE_AUTOCLAVE: {
-            iexamine::autoclave_empty(you, pos);
+            iexamine::autoclave_empty(*you.as_player(), pos);
             return;
         }
         case USE_AUTODOC: {
-            iexamine::autodoc(you, pos);
+            iexamine::autodoc(*you.as_player(), pos);
             return;
         }
         case FILL_CONTAINER: {
@@ -2110,11 +2138,11 @@ void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part) {
             return;
         }
         case UNLOAD_TURRET: {
-            avatar_funcs::unload_item(you, turret.base());
+            avatar_funcs::unload_item(get_avatar(), turret.base());
             return;
         }
         case RELOAD_TURRET: {
-            auto opt = reload_ui::select_ammo(you, turret.base(), {.prompt = true});
+            auto opt = reload_ui::select_ammo(*you.as_player(), turret.base(), {.prompt = true});
             if (opt) {
                 you.assign_activity(ACT_RELOAD, opt.moves(), opt.qty());
                 you.activity->targets.emplace_back(turret.base());
@@ -2135,7 +2163,7 @@ void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part) {
             return;
         }
         case CONTROL: {
-            use_controls(pos);
+            use_controls(pos, &you);
             return;
         }
         case CONTROL_ELECTRONICS: {
@@ -2167,7 +2195,7 @@ void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part) {
             return;
         }
         case PICK_LOCK: {
-            iexamine::locked_object_pickable(get_avatar(), pos);
+            iexamine::locked_object_pickable(*you.as_player(), pos);
             return;
         }
     }

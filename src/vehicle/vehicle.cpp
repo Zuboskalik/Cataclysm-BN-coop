@@ -38,6 +38,7 @@
 #include "map_iterator.h"
 #include "mapgen/mapgen_constructor.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "monster.h"
 #include "npc.h"
 #include "options.h"
@@ -526,6 +527,14 @@ vehicle::vehicle(): vehicle(vproto_id()) {
 }
 
 vehicle::~vehicle() = default;
+
+auto vehicle::driven_by_player() const -> bool {
+    if (player_in_control(g->u)) { return true; }
+    for (const npc& guy : g->all_npcs()) {
+        if (cata_mp::is_proxy(guy) && player_in_control(guy)) { return true; }
+    }
+    return false;
+}
 
 auto vehicle::player_in_control(const Character& who) const -> bool {
     // Debug switch to prevent vehicles from skidding
@@ -5991,7 +6000,7 @@ void vehicle::place_spawn_items() {
 void vehicle::gain_moves() {
     fuel_used_last_turn.clear();
     check_falling_or_floating();
-    const bool pl_control = player_in_control(g->u);
+    const bool pl_control = driven_by_player();
     if (is_moving() || is_falling) {
         if (!loose_parts.empty()) { shed_loose_parts(); }
         of_turn = 1 + of_turn_carry;

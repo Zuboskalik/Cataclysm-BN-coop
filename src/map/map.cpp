@@ -1463,6 +1463,9 @@ auto map::move_vehicle(vehicle& veh, const tripoint_rel_ms& dp, const tileray& f
             // TODO: Make skid recovery in air hard
             veh.possibly_recover_from_skid();
         }
+    } else if (veh.skidding && can_move && veh.driven_by_player()) {
+        // Co-op: another player's character drives.
+        veh.possibly_recover_from_skid();
     }
     // Now we're gonna handle traps we're standing on (if we're still moving).
     if (!vertical && can_move) {

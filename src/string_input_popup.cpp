@@ -7,6 +7,7 @@
 #include "char_validity_check.h"
 #include "ime.h"
 #include "input.h"
+#include "mp_session.h"
 #include "output.h"
 #include "point.h"
 #include "translations.h"
@@ -355,6 +356,17 @@ int64_t string_input_popup::query_int64_t( const bool loop, const bool draw_only
 const std::string &string_input_popup::query_string( const bool loop, const bool draw_only,
         const bool printable )
 {
+    // Co-op: text asked for during a remote player's action is theirs to type.
+    if( loop && !draw_only && cata_mp::remote_prompts_active() ) {
+        const std::optional<std::string> typed = cata_mp::remote_text( _title, _description, _text,
+                _only_digits, _max_length );
+        _canceled = !typed.has_value();
+        _confirmed = typed.has_value();
+        if( typed ) {
+            _text = *typed;
+        }
+        return _text;
+    }
     if( !custom_window && !w_full ) {
         create_window();
         _position = -1;

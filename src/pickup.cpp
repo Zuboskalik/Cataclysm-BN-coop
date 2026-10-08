@@ -28,6 +28,7 @@
 #include "map/map_selector.h"
 #include "map/mapdata.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "options.h"
 #include "output.h"
 #include "overmap/overmapbuffer.h"
@@ -1236,6 +1237,11 @@ auto pick_up_from_items( const std::vector<item_stack::iterator> &here, const in
 // Pick up items at (pos).
 auto pickup::pick_up( const tripoint_bub_ms &p, int min, from_where get_items_from ) -> void
 {
+    // Co-op: picking up during a remote player's action (e.g. examining a
+    // cupboard) is that player's, with their character.
+    if( cata_mp::remote_pickup( p ) ) {
+        return;
+    }
     auto cargo_part = -1;
 
     const auto vp = g->m.veh_at( p );

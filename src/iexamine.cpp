@@ -6527,13 +6527,13 @@ void iexamine::autodoc( player &p, const tripoint_bub_ms &examp )
                     bionic_to_uninstall->set_flag( flag_IN_CBM );
                     bionic_to_uninstall->set_flag( flag_NO_STERILE );
                     bionic_to_uninstall->set_flag( flag_NO_PACKED );
-                    g->u.i_add( std::move( bionic_to_uninstall ) );
+                    p.i_add( std::move( bionic_to_uninstall ) );
                 }
             }
 
             const item *bionic = game_menus::inv::uninstall_bionic( p, patient );
             if( !bionic ) {
-                g->u.remove_items_with( []( detached_ptr<item> &&it ) { // remove cbm items from inventory
+                p.remove_items_with( []( detached_ptr<item> &&it ) { // remove cbm items from inventory
                     if( it->has_flag( flag_IN_CBM ) ) {
                         detached_ptr<item> del = std::move( it ); //This acts as a delete
                     }
@@ -6545,7 +6545,7 @@ void iexamine::autodoc( player &p, const tripoint_bub_ms &examp )
             const itype *itemtype = it->type;
             const bionic_id &bid = itemtype->bionic->id;
 
-            g->u.remove_items_with( []( detached_ptr<item> &&it ) { // remove cbm items from inventory
+            p.remove_items_with( []( detached_ptr<item> &&it ) { // remove cbm items from inventory
                 if( it->has_flag( flag_IN_CBM ) ) {
                     detached_ptr<item> del = std::move( it ); //This acts as a delete
                 }

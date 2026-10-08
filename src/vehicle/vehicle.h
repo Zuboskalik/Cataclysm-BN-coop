@@ -513,6 +513,8 @@ public:
 
     // check if given player controls this vehicle
     auto player_in_control(const Character& who) const -> bool;
+    /// The avatar or a co-op player's character is driving.
+    auto driven_by_player() const -> bool;
     // check if player controls this vehicle remotely
     auto remote_controlled(const Character& who) const -> bool;
 
@@ -592,7 +594,8 @@ public:
      *  Operate vehicle controls
      *  @param pos location of physical controls to operate (ignored during remote operation)
      */
-    void use_controls(const tripoint_bub_ms& pos);
+    // `who` uses the controls; the avatar when null.
+    void use_controls(const tripoint_bub_ms& pos, Character* who = nullptr);
 
     // Fold up the vehicle
     auto fold_up() -> bool;
@@ -602,7 +605,8 @@ public:
     // stop all engines
     void stop_engines();
     // Attempt to start the vehicle's active engines
-    void start_engines(bool take_control = false, bool autodrive = false);
+    // `driver` takes control / starts the engines; the avatar when null.
+    void start_engines(bool take_control = false, bool autodrive = false, Character* driver = nullptr);
 
     // Engine backfire, making a loud noise
     void backfire(int e) const;
@@ -1545,7 +1549,7 @@ public:
     // main method for the control of multiple electronics
     void control_electronics();
     // main method for the control of individual engines
-    void control_engines();
+    void control_engines(Character* who = nullptr);
     // shows ui menu to select an engine
     auto select_engine() -> int;
     // returns whether the engine is enabled or not, and has fueltype
@@ -1605,7 +1609,8 @@ public:
     void use_bike_rack(int part);
     void use_harness(int part, const tripoint_bub_ms& pos);
 
-    void interact_with(const tripoint_bub_ms& pos, int interact_part);
+    // `who` interacts; the avatar when null.
+    void interact_with(const tripoint_bub_ms& pos, int interact_part, Character* who = nullptr);
 
     // Check if a movement is blocked, must be adjacent points
     auto allowed_move(const tripoint_mnt_veh& from, const tripoint_mnt_veh& to) const -> bool;

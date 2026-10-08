@@ -60,6 +60,7 @@
 #include "ui.h"
 #include "ui_manager.h"
 #include "trap.h"
+#include "vehicle/vehicle.h"
 #include "vehicle/vpart_position.h"
 #include "weather/weather.h"
 #include "world.h"
@@ -329,11 +330,24 @@ void rebuild_monster_seeds()
     }
 }
 
+// Takes one of our monster copies off the map.  The game may already have
+// dropped it on its own (e.g. when the map scrolled while riding a vehicle),
+// so only remove what it still tracks.
+void remove_monster_copy( const monster &mon )
+{
+    for( const monster &tracked : g->all_monsters() ) {
+        if( &tracked == &mon ) {
+            g->remove_zombie( mon );
+            return;
+        }
+    }
+}
+
 void remove_all_monsters()
 {
     for( auto &[key, mon] : S.monsters ) {
         if( mon ) {
-            g->remove_zombie( *mon );
+            remove_monster_copy( *mon );
         }
     }
     S.monsters.clear();
@@ -422,6 +436,7 @@ void apply_state( message &m )
     if( jo.has_member( "you" ) ) {
         try {
             u.mp_mirror_load( *jo.get_raw( "you" ) );
+            u.controlling_vehicle = jo.get_bool( "driving", false );
         } catch( const std::exception &e ) {
             log( std::string( "mirror failed: " ) + e.what() );
         }
@@ -463,7 +478,7 @@ void apply_state( message &m )
             const auto it = S.monsters.find( key );
             if( it != S.monsters.end() ) {
                 if( it->second ) {
-                    g->remove_zombie( *it->second );
+                    remove_monster_copy( *it->second );
                 }
                 S.monsters.erase( it );
             }
@@ -489,7 +504,7 @@ void apply_state( message &m )
             const auto old = S.monsters.find( key );
             if( old != S.monsters.end() ) {
                 if( old->second ) {
-                    g->remove_zombie( *old->second );
+                    remove_monster_copy( *old->second );
                 }
                 S.monsters.erase( old );
             }
@@ -508,7 +523,7 @@ void apply_state( message &m )
                         break;
                     }
                 }
-                g->remove_zombie( *stale );
+                remove_monster_copy( *stale );
             }
             if( g->place_critter_around( mon, pos, 0, true ) != nullptr ) {
                 S.monsters[key] = mon;
@@ -632,44 +647,70 @@ bool choose_wait_duration( int &turns )
     return true;
 }
 
-void request_pickup( const tripoint_bub_ms &pos )
+// Opens the pickup menu for a tile and returns the chosen items in the
+// host's [[index, count, type, ordinal], ...] form ("" if nothing chosen).
+std::string choose_pickup( const tripoint_bub_ms &pos )
 {
     avatar &u = get_avatar();
     map &here = get_map();
     if( here.i_at( pos ).empty() ) {
         add_msg( m_info, _( "There is nothing to pick up there." ) );
-        return;
+        return std::string();
     }
     const std::vector<pickup::pick_drop_selection> picked = game_menus::inv::pickup_from_tile( u,
             pos );
     if( picked.empty() ) {
-        return;
+        return std::string();
     }
     std::vector<item *> ground;
     for( item *it : here.i_at( pos ) ) {
         ground.push_back( it );
     }
+    // A vehicle's cargo space there is offered too.
+    std::vector<item *> cargo;
+    if( const optional_vpart_position vp = here.veh_at( pos ) ) {
+        const int part = vp->vehicle().part_with_feature( vp->part_index(), "CARGO", false );
+        if( part >= 0 ) {
+            for( item *it : vp->vehicle().get_items( part ) ) {
+                cargo.push_back( it );
+            }
+        }
+    }
     std::string list;
     for( const pickup::pick_drop_selection &sel : picked ) {
         const item *target = sel.target.get();
-        const auto found = std::find( ground.begin(), ground.end(), target );
+        bool in_cargo = false;
+        auto found = std::find( ground.begin(), ground.end(), target );
+        std::vector<item *> *pile = &ground;
         if( found == ground.end() ) {
-            continue;
+            found = std::find( cargo.begin(), cargo.end(), target );
+            if( found == cargo.end() ) {
+                continue;
+            }
+            in_cargo = true;
+            pile = &cargo;
         }
-        const int index = static_cast<int>( found - ground.begin() );
-        const int ordinal = static_cast<int>( std::count_if( ground.begin(), found,
+        const int index = static_cast<int>( found - pile->begin() );
+        const int ordinal = static_cast<int>( std::count_if( pile->begin(), found,
         [target]( const item * g ) {
             return g->typeId() == target->typeId();
         } ) );
         list += list.empty() ? "" : ",";
-        list += string_format( "[%d,%d,%s,%d]", index, sel.quantity.value_or( 0 ),
-                               json_quote( target->typeId().str() ), ordinal );
+        list += string_format( "[%d,%d,%s,%d%s]", index, sel.quantity.value_or( 0 ),
+                               json_quote( target->typeId().str() ), ordinal, in_cargo ? ",1" : "" );
     }
     if( list.empty() ) {
-        add_msg( m_info, _( "You can only pick up loose items from the ground in co-op." ) );
-        return;
+        add_msg( m_info, _( "Those items can't be picked up in co-op yet." ) );
     }
-    send_action( "pickup", pos_fields( pos ) + ",\"items\":[" + list + "]" );
+    return list;
+}
+
+void request_pickup( const tripoint_bub_ms &pos )
+{
+    const std::string list = choose_pickup( pos );
+    if( !list.empty() ) {
+        send_action( "pickup", pos_fields( pos ) + ",\"items\":[" + list + "]" );
+    }
 }
 
 void request_drop( const std::optional<tripoint_bub_ms> &where = std::nullopt )
@@ -723,6 +764,16 @@ void request_craft( const bool is_long, const bool again )
 void request_fire()
 {
     avatar &u = get_avatar();
+    // A reach weapon (spear, whip...) attacks at a distance instead.
+    if( u.is_armed() && !( u.primary_weapon().is_gun() &&
+                           !u.primary_weapon().gun_current_mode().melee() ) &&
+        u.primary_weapon().reach_range( u ) > 1 ) {
+        const target_handler::trajectory traj = target_handler::mode_reach( u, u.primary_weapon() );
+        if( !traj.empty() ) {
+            send_action( "reach", pos_fields( traj.back() ) );
+        }
+        return;
+    }
     if( !u.is_armed() || !u.primary_weapon().is_gun() ) {
         add_msg( m_info, _( "You are not wielding a gun." ) );
         return;
@@ -759,6 +810,68 @@ void request_fire()
     send_action( "fire", pos_fields( target ) +
                  string_format( ",\"recoil\":%.3f,\"aim_moves\":%d,\"mode\":%s", u.recoil, spent,
                                 json_quote( u.primary_weapon().gun_get_mode_id().str() ) ) );
+}
+
+// Addresses an item lying next to us for the host: tile, index in its pile
+// and which one of its type it is.  nullopt if it is not within reach.
+std::optional<std::string> ground_item_fields( const item *it )
+{
+    avatar &u = get_avatar();
+    map &here = get_map();
+    for( const tripoint_bub_ms &p : here.points_in_radius( u.bub_pos(), 1 ) ) {
+        std::vector<item *> ground;
+        for( item *g : here.i_at( p ) ) {
+            ground.push_back( g );
+        }
+        const auto found = std::find( ground.begin(), ground.end(), it );
+        if( found == ground.end() ) {
+            continue;
+        }
+        const int ordinal = static_cast<int>( std::count_if( ground.begin(), found,
+        [it]( const item * g ) {
+            return g->typeId() == it->typeId();
+        } ) );
+        return pos_fields( p ) + string_format( ",\"gidx\":%d,\"type\":%s,\"ord\":%d",
+                                                static_cast<int>( found - ground.begin() ), json_quote( it->typeId().str() ), ordinal );
+    }
+    return std::nullopt;
+}
+
+// Fields addressing an item for the host, carried or next to us.
+std::optional<std::string> any_item_fields( item *it )
+{
+    if( item_index_of( get_avatar(), it ) >= 0 ) {
+        return item_fields( it );
+    }
+    return ground_item_fields( it );
+}
+
+// Throwing: pick the item and aim with the usual targeting UI here; the host
+// throws it.  The target goes as tx/ty/tz (x/y/z address the item).
+void request_throw()
+{
+    avatar &u = get_avatar();
+    item *it = game_menus::inv::titled_menu( u, _( "Throw item" ),
+               _( "You don't have any items to throw." ) );
+    if( it == nullptr ) {
+        return;
+    }
+    if( item_index_of( u, it ) < 0 ) {
+        add_msg( m_info, _( "You don't have that item." ) );
+        return;
+    }
+    const int range = u.throw_range( *it );
+    if( range == 0 ) {
+        add_msg( m_info, _( "That is too heavy to throw." ) );
+        return;
+    }
+    const target_handler::trajectory traj = target_handler::mode_throw( u, *it, false );
+    if( traj.empty() ) {
+        return;
+    }
+    const tripoint_abs_ms abs = bub_to_abs( traj.back() );
+    send_action( "throw", item_fields( it ) + string_format( ",\"tx\":%d,\"ty\":%d,\"tz\":%d",
+                 abs.x(), abs.y(), abs.z() ) );
 }
 
 // The wield menu also offers items lying next to the character.
@@ -804,7 +917,7 @@ void view_inventory()
     if( it == nullptr ) {
         return;
     }
-    enum { act_info, act_wield, act_wear, act_takeoff, act_eat, act_drop, act_use };
+    enum { act_info, act_wield, act_wear, act_takeoff, act_eat, act_drop, act_use, act_read, act_disassemble };
     uilist menu;
     menu.text = it->display_name();
     menu.addentry( act_info, true, 'i', _( "Examine" ) );
@@ -821,6 +934,10 @@ void view_inventory()
     if( it->type->has_use() ) {
         menu.addentry( act_use, true, 'a', _( "Use" ) );
     }
+    if( it->is_book() ) {
+        menu.addentry( act_read, true, 'R', _( "Read" ) );
+    }
+    menu.addentry( act_disassemble, true, 'D', _( "Disassemble" ) );
     menu.addentry( act_drop, true, 'd', _( "Drop" ) );
     menu.query();
     if( menu.ret == act_info ) {
@@ -854,6 +971,12 @@ void view_inventory()
         case act_use:
             request_use( it );
             break;
+        case act_read:
+            send_action( "read", item_fields( it ) );
+            break;
+        case act_disassemble:
+            send_action( "disassemble", item_fields( it ) );
+            break;
         case act_drop:
             send_action( "drop", string_format( ",\"items\":[[%d,0,%s,%d,%s]]", item_index_of( u, it ),
                                                 json_quote( it->typeId().str() ), item_type_ordinal( u, it ),
@@ -875,8 +998,9 @@ void request_use( item *it )
             return;
         }
     }
-    if( item_index_of( u, it ) < 0 ) {
-        add_msg( m_info, _( "Pick it up first to use it in co-op." ) );
+    const std::optional<std::string> where = any_item_fields( it );
+    if( !where ) {
+        add_msg( m_info, _( "You can't reach that." ) );
         return;
     }
     std::string method;
@@ -896,7 +1020,7 @@ void request_use( item *it )
         }
         method = std::next( methods.begin(), umenu.ret )->first;
     }
-    send_action( "use", item_fields( it ) + ",\"method\":" + json_quote( method ) );
+    send_action( "use", *where + ",\"method\":" + json_quote( method ) );
 }
 
 // Butcher (B): corpses on our tile; the host runs the butchering activity,
@@ -1042,6 +1166,7 @@ bool is_local_ui_action( action_id act )
         case ACTION_NULL:
         case ACTION_COOP_CHAT:
         case ACTION_COOP_MENU:
+        case ACTION_COOP_PLAYERS:
             return true;
         default:
             return false;
@@ -1092,6 +1217,157 @@ void send_chat( const std::string &text )
     send( "{\"t\":\"chat\",\"text\":" + json_quote( text ) + "}" );
 }
 
+// A question raised by our own action while the host runs it; the host
+// waits for the answer.  Kinds: a menu choice, a direction, a map tile, text.
+void answer_question( message &m )
+{
+    JsonObject jo = m.object();
+    const int id = jo.get_int( "id", 0 );
+    const std::string kind = jo.get_string( "kind", "choice" );
+    std::string reply;
+    if( kind == "dir" ) {
+        const std::optional<tripoint_rel_ms> dir = choose_direction( jo.get_string( "text", "" ),
+                jo.get_bool( "vertical", false ) );
+        reply = dir ? string_format( ",\"ok\":true,\"dx\":%d,\"dy\":%d,\"dz\":%d", dir->x(), dir->y(),
+                                     dir->z() ) : ",\"ok\":false";
+    } else if( kind == "peek" ) {
+        g->peek( tripoint_rel_ms( jo.get_int( "dx", 0 ), jo.get_int( "dy", 0 ), jo.get_int( "dz", 0 ) ) );
+    } else if( kind == "multi" ) {
+        // Several items: tick them (with an amount when there are several),
+        // then confirm.
+        std::vector<std::string> opts;
+        std::vector<int> maxes;
+        jo.read( "opts", opts );
+        jo.read( "max", maxes );
+        std::vector<int> chosen( opts.size(), 0 );
+        bool confirmed = false;
+        int cursor = 0;
+        while( true ) {
+            uilist menu;
+            menu.text = jo.get_string( "text", "" ) + "\n" +
+                        _( "Select items, then choose \"Done\"." );
+            for( size_t i = 0; i < opts.size(); ++i ) {
+                const int max = i < maxes.size() ? maxes[i] : 1;
+                const std::string mark = chosen[i] == 0 ? "[ ] " : max > 1 ?
+                                         string_format( "[%d] ", chosen[i] ) : "[x] ";
+                menu.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, mark + opts[i] );
+            }
+            const int done = static_cast<int>( opts.size() );
+            menu.addentry( done, true, 'D', _( "Done" ) );
+            menu.selected = cursor;
+            menu.query();
+            if( menu.ret == done ) {
+                confirmed = true;
+                break;
+            }
+            if( menu.ret < 0 || menu.ret >= done ) {
+                break;
+            }
+            cursor = menu.ret;
+            const int max = menu.ret < static_cast<int>( maxes.size() ) ? maxes[menu.ret] : 1;
+            if( chosen[menu.ret] > 0 ) {
+                chosen[menu.ret] = 0;
+            } else if( max > 1 ) {
+                string_input_popup amount;
+                amount.title( string_format( _( "How many (max %d)?" ), max ) )
+                .text( std::to_string( max ) )
+                .only_digits( true );
+                const int n = amount.query_int();
+                if( !amount.canceled() ) {
+                    chosen[menu.ret] = std::clamp( n, 0, max );
+                }
+            } else {
+                chosen[menu.ret] = 1;
+            }
+        }
+        std::string picks;
+        if( confirmed ) {
+            for( size_t i = 0; i < chosen.size(); ++i ) {
+                if( chosen[i] > 0 ) {
+                    picks += picks.empty() ? "" : ",";
+                    picks += string_format( "[%d,%d]", static_cast<int>( i ), chosen[i] );
+                }
+            }
+        }
+        reply = ",\"picks\":[" + picks + "]";
+    } else if( kind == "target" ) {
+        // Targeting inside our action (an item, a turret...): a creature in
+        // range, or any spot.
+        avatar &u = get_avatar();
+        const int range = std::max( 1, jo.get_int( "range", 60 ) );
+        std::vector<Creature *> targets = g->get_creatures_if( [&]( const Creature & c ) {
+            return &c != &u && u.sees( c ) && rl_dist( u.bub_pos(), c.bub_pos() ) <= range &&
+                   c.attitude_to( u ) == Attitude::A_HOSTILE;
+        } );
+        std::sort( targets.begin(), targets.end(), [&u]( const Creature * a, const Creature * b ) {
+            return rl_dist( u.bub_pos(), a->bub_pos() ) < rl_dist( u.bub_pos(), b->bub_pos() );
+        } );
+        uilist menu;
+        menu.text = jo.get_string( "text", "" );
+        for( size_t i = 0; i < targets.size(); ++i ) {
+            menu.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, string_format( _( "%1$s (%2$d)" ),
+                           targets[i]->disp_name(), rl_dist( u.bub_pos(), targets[i]->bub_pos() ) ) );
+        }
+        const int pick_spot = static_cast<int>( targets.size() );
+        menu.addentry( pick_spot, true, 's', _( "Choose a spot…" ) );
+        menu.query();
+        std::optional<tripoint_bub_ms> pos;
+        if( menu.ret >= 0 && menu.ret < pick_spot ) {
+            pos = targets[menu.ret]->bub_pos();
+        } else if( menu.ret == pick_spot ) {
+            pos = g->look_around();
+        }
+        reply = pos ? ",\"ok\":true" + pos_fields( *pos ) : ",\"ok\":false";
+    } else if( kind == "tile" ) {
+        add_msg( m_info, "%s", jo.get_string( "text", "" ) );
+        const std::optional<tripoint_bub_ms> pos = g->look_around();
+        reply = pos ? ",\"ok\":true" + pos_fields( *pos ) : ",\"ok\":false";
+    } else if( kind == "pickup" ) {
+        // The host's examine of a container etc. wants us to pick items there.
+        const tripoint_bub_ms pos = abs_to_bub( tripoint_abs_ms( jo.get_int( "x", 0 ),
+                                                jo.get_int( "y", 0 ), jo.get_int( "z", 0 ) ) );
+        reply = ",\"items\":[" + choose_pickup( pos ) + "]";
+    } else if( kind == "text" ) {
+        string_input_popup popup;
+        popup.title( jo.get_string( "title", "" ) )
+        .description( jo.get_string( "desc", "" ) )
+        .text( jo.get_string( "init", "" ) )
+        .only_digits( jo.get_bool( "digits", false ) );
+        const int max_length = jo.get_int( "max", -1 );
+        if( max_length > 0 ) {
+            popup.max_length( max_length );
+        }
+        popup.query();
+        reply = popup.canceled() ? ",\"ok\":false" :
+                ",\"ok\":true,\"s\":" + json_quote( popup.text() );
+    } else {
+        std::vector<std::string> opts;
+        std::vector<bool> en;
+        jo.read( "opts", opts );
+        jo.read( "en", en );
+        uilist menu;
+        menu.text = jo.get_string( "text", "" );
+        menu.allow_cancel = jo.get_bool( "cancel", false );
+        for( size_t i = 0; i < opts.size(); ++i ) {
+            menu.addentry( static_cast<int>( i ), i >= en.size() || en[i], MENU_AUTOASSIGN, opts[i] );
+        }
+        const bool any_enabled = std::any_of( menu.entries.begin(), menu.entries.end(),
+        []( const uilist_entry & e ) {
+            return e.enabled;
+        } );
+        int pick = -1;
+        if( any_enabled ) {
+            do {
+                menu.query();
+                pick = menu.ret;
+            } while( !menu.allow_cancel && ( pick < 0 || pick >= static_cast<int>( opts.size() ) ) );
+        }
+        reply = string_format( ",\"i\":%d", pick );
+    }
+    send( string_format( "{\"t\":\"answer\",\"id\":%d%s}", id, reply ) );
+    g->invalidate_main_ui_adaptor();
+}
+
 void handle_line( const std::string &line )
 {
     message m( line );
@@ -1118,31 +1394,7 @@ void handle_line( const std::string &line )
         JsonObject jo = m.object();
         add_msg( m_info, "<color_light_cyan>%s</color>", jo.get_string( "text", "" ) );
     } else if( t == "ask" ) {
-        // A question raised by our action on the host; it waits for the answer.
-        JsonObject jo = m.object();
-        std::vector<std::string> opts;
-        std::vector<bool> en;
-        jo.read( "opts", opts );
-        jo.read( "en", en );
-        uilist menu;
-        menu.text = jo.get_string( "text", "" );
-        menu.allow_cancel = jo.get_bool( "cancel", false );
-        for( size_t i = 0; i < opts.size(); ++i ) {
-            menu.addentry( static_cast<int>( i ), i >= en.size() || en[i], MENU_AUTOASSIGN, opts[i] );
-        }
-        const bool any_enabled = std::any_of( menu.entries.begin(), menu.entries.end(),
-        []( const uilist_entry & e ) {
-            return e.enabled;
-        } );
-        int pick = -1;
-        if( any_enabled ) {
-            do {
-                menu.query();
-                pick = menu.ret;
-            } while( !menu.allow_cancel && ( pick < 0 || pick >= static_cast<int>( opts.size() ) ) );
-        }
-        send( string_format( "{\"t\":\"answer\",\"id\":%d,\"i\":%d}", jo.get_int( "id", 0 ), pick ) );
-        g->invalidate_main_ui_adaptor();
+        answer_question( m );
     } else if( t == "bye" ) {
         JsonObject jo = m.object();
         S.end_reason = jo.get_string( "msg", _( "The host ended the session." ) );
@@ -1495,10 +1747,19 @@ bool client_intercept_action( action_id act,
         case ACTION_MOVE_BACK_LEFT:
         case ACTION_MOVE_LEFT:
         case ACTION_MOVE_FORTH_LEFT: {
+            if( u.controlling_vehicle ) {
+                // At the wheel the keys steer (x) and accelerate/brake (y).
+                const point_rel_ms d = get_delta_from_movement_action( act, iso_rotate::no );
+                client::send_action( "drive", string_format( ",\"dx\":%d,\"dy\":%d", d.x(), d.y() ) );
+                return true;
+            }
             const point_rel_ms d = get_delta_from_movement_action( act, iso_rotate::yes );
             client::send_action( "move", string_format( ",\"dx\":%d,\"dy\":%d", d.x(), d.y() ) );
             return true;
         }
+        case ACTION_CONTROL_VEHICLE:
+            client::send_action( "control_vehicle" );
+            return true;
         case ACTION_MOVE_DOWN:
             client::send_action( "vmove", ",\"dz\":-1" );
             return true;
@@ -1506,6 +1767,11 @@ bool client_intercept_action( action_id act,
             client::send_action( "vmove", ",\"dz\":1" );
             return true;
         case ACTION_PAUSE:
+            if( u.controlling_vehicle ) {
+                // At the wheel, waiting means keeping the vehicle going.
+                client::send_action( "drive", ",\"dx\":0,\"dy\":0" );
+                return true;
+            }
             client::send_action( "pause" );
             return true;
         case ACTION_WAIT: {
@@ -1562,6 +1828,26 @@ bool client_intercept_action( action_id act,
                 return true;
             }
             map &here = get_map();
+            // Another character there: the host or an NPC.
+            if( const npc *who = g->critter_at<npc>( *p ) ) {
+                const bool is_host = who->getID().get_value() == client::S.host_id;
+                uilist menu;
+                menu.text = string_format( _( "What to do with %s?" ), who->get_name() );
+                menu.addentry( 0, rl_dist( u.bub_pos(), *p ) == 1 && !who->is_enemy(), 's',
+                               _( "Swap positions" ) );
+                menu.addentry( 1, is_host, 'c', _( "Chat with the host" ) );
+                menu.addentry( 2, true, 'l', _( "Look at them" ) );
+                menu.query();
+                if( menu.ret == 0 ) {
+                    const tripoint_rel_ms d = *p - u.bub_pos();
+                    client::send_action( "move", string_format( ",\"dx\":%d,\"dy\":%d", d.x(), d.y() ) );
+                } else if( menu.ret == 1 ) {
+                    open_chat();
+                } else if( menu.ret == 2 ) {
+                    g->look_around( LA_MODE_DEFAULT );
+                }
+                return true;
+            }
             const bool special = here.has_flag( "CONSOLE", *p ) || here.veh_at( *p ) ||
                                  !here.tr_at( *p ).is_null() ||
                                  ( here.has_furn( *p ) ? here.furn( *p ).obj().examine != &iexamine::none :
@@ -1620,6 +1906,9 @@ bool client_intercept_action( action_id act,
         case ACTION_FIRE:
             client::request_fire();
             return true;
+        case ACTION_THROW:
+            client::request_throw();
+            return true;
         case ACTION_AUTOATTACK:
             client::request_autoattack();
             return true;
@@ -1634,11 +1923,12 @@ bool client_intercept_action( action_id act,
             if( book == nullptr ) {
                 return true;
             }
-            if( item_index_of( u, book ) < 0 ) {
-                add_msg( m_info, _( "Pick it up first to read it in co-op." ) );
+            const std::optional<std::string> where = client::any_item_fields( book );
+            if( !where ) {
+                add_msg( m_info, _( "You can't reach that." ) );
                 return true;
             }
-            client::send_action( "read", client::item_fields( book ) );
+            client::send_action( "read", *where );
             return true;
         }
         case ACTION_USE_WIELDED:
@@ -1685,9 +1975,52 @@ bool client_intercept_action( action_id act,
                                  u.get_movement_mode() == CMM_PRONE ? CMM_WALK : CMM_PRONE ) );
             return true;
         case ACTION_CYCLE_MOVE:
-            client::send_action( "move_mode", string_format( ",\"mode\":%d",
-                                 ( static_cast<int>( u.get_movement_mode() ) + 1 ) % CMM_COUNT ) );
+            client::send_action( "move_mode", ",\"cycle\":true" );
             return true;
+        case ACTION_OPEN_MOVEMENT: {
+            uilist as_m;
+            as_m.text = _( "Change to which movement mode?" );
+            as_m.entries.emplace_back( CMM_RUN, true, 'r', _( "Run" ) );
+            as_m.entries.emplace_back( CMM_WALK, true, 'w', _( "Walk" ) );
+            as_m.entries.emplace_back( CMM_CROUCH, true, 'c', _( "Crouch" ) );
+            as_m.entries.emplace_back( CMM_PRONE, true, 'p', _( "Prone" ) );
+            as_m.entries.emplace_back( CMM_COUNT, true, '"', _( "Cycle move mode" ) );
+            as_m.selected = 1;
+            as_m.query();
+            if( as_m.ret == CMM_COUNT ) {
+                client::send_action( "move_mode", ",\"cycle\":true" );
+            } else if( as_m.ret >= 0 && as_m.ret < CMM_COUNT ) {
+                client::send_action( "move_mode", string_format( ",\"mode\":%d", as_m.ret ) );
+            }
+            return true;
+        }
+        case ACTION_JUMP: {
+            if( !iexamine::can_start_jump_over_tile( u ) ) {
+                return true;
+            }
+            const auto allowed = [&u]( const tripoint_bub_ms & pos ) {
+                return iexamine::can_jump_over_tile( u, pos );
+            };
+            const std::optional<tripoint_bub_ms> target = choose_adjacent_highlight(
+                        _( "Jump across where?" ), _( "There is no adjacent tile you can jump across." ), allowed );
+            if( target ) {
+                client::send_action( "jump", client::pos_fields( *target ) );
+            }
+            return true;
+        }
+        case ACTION_DISASSEMBLE: {
+            item *target = game_menus::inv::disassemble( u );
+            if( target == nullptr ) {
+                return true;
+            }
+            const std::optional<std::string> where = client::any_item_fields( target );
+            if( !where ) {
+                add_msg( m_info, _( "You can't reach that." ) );
+                return true;
+            }
+            client::send_action( "disassemble", *where );
+            return true;
+        }
         case ACTION_RESET_MOVE:
             client::send_action( "move_mode", string_format( ",\"mode\":%d", CMM_WALK ) );
             return true;
