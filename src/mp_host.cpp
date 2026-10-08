@@ -418,10 +418,12 @@ std::string build_state( peer_t &p, sync_level level, broadcast_cache &cache )
         const std::string you = write_json( [proxy]( JsonOut & jsout ) {
             proxy->serialize( jsout );
         } );
-        const size_t h = std::hash<std::string>()( you );
+        // Whether the character drives is saved for the avatar only.
+        const std::string driving = proxy->controlling_vehicle ? "1" : "0";
+        const size_t h = std::hash<std::string>()( you + driving );
         if( h != p.you_sent || p.full_sync ) {
             p.you_sent = h;
-            out += ",\"you\":" + you;
+            out += ",\"you\":" + you + ",\"driving\":" + ( proxy->controlling_vehicle ? "true" : "false" );
         }
     }
 
@@ -1075,15 +1077,43 @@ std::vector<item *> ground_items( const tripoint_bub_ms &pos )
 }
 
 // [[index, count, type, ordinal], ...] -> resolved (item, count) pairs.
+// The cargo part of a vehicle at `pos`, or -1.
+int cargo_part_at( const tripoint_bub_ms &pos, vehicle *&veh )
+{
+    veh = nullptr;
+    const optional_vpart_position vp = get_map().veh_at( pos );
+    if( !vp ) {
+        return -1;
+    }
+    veh = &vp->vehicle();
+    return veh->part_with_feature( vp->part_index(), "CARGO", false );
+}
+
+std::vector<item *> cargo_items( const tripoint_bub_ms &pos )
+{
+    std::vector<item *> cargo;
+    vehicle *veh = nullptr;
+    const int part = cargo_part_at( pos, veh );
+    if( part >= 0 ) {
+        for( item *it : veh->get_items( part ) ) {
+            cargo.push_back( it );
+        }
+    }
+    return cargo;
+}
+
+// Entries are [index, count, type, ordinal(, 1 if in a vehicle's cargo)].
 std::vector<std::pair<item *, int>> resolve_ground_items( const tripoint_bub_ms &pos,
         const JsonArray &list )
 {
     const std::vector<item *> ground = ground_items( pos );
+    const std::vector<item *> cargo = cargo_items( pos );
     std::vector<std::pair<item *, int>> result;
     for( JsonArray entry : list ) {
         const int count = entry.get_int( 1 );
-        item *it = resolve_ground_item( ground, entry.get_int( 0 ), entry.get_string( 2 ),
-                                        entry.size() > 3 ? entry.get_int( 3 ) : -1 );
+        const bool in_cargo = entry.size() > 4 && entry.get_int( 4 ) == 1;
+        item *it = resolve_ground_item( in_cargo ? cargo : ground, entry.get_int( 0 ),
+                                        entry.get_string( 2 ), entry.size() > 3 ? entry.get_int( 3 ) : -1 );
         if( it == nullptr || std::any_of( result.begin(), result.end(),
         [it]( const std::pair<item *, int> &r ) {
         return r.first == it;
@@ -1146,8 +1176,19 @@ action_result do_pickup( npc &guy, const tripoint_bub_ms &pos, const JsonArray &
             continue;
         }
         const std::string name = it->tname( qty > 0 ? qty : 1 );
-        detached_ptr<item> taken = ( qty > 0 && qty < it->charges ) ? it->split( qty ) :
-                                   here.i_rem( pos, it );
+        detached_ptr<item> taken;
+        if( qty > 0 && qty < it->charges ) {
+            taken = it->split( qty );
+        } else {
+            vehicle *veh = nullptr;
+            const int part = cargo_part_at( pos, veh );
+            const std::vector<item *> cargo = cargo_items( pos );
+            if( part >= 0 && std::find( cargo.begin(), cargo.end(), it ) != cargo.end() ) {
+                taken = veh->remove_item( part, it );
+            } else {
+                taken = here.i_rem( pos, it );
+            }
+        }
         if( !taken ) {
             continue;
         }
@@ -1447,8 +1488,10 @@ action_result do_examine( npc &guy, const tripoint_bub_ms &pos )
     if( rl_dist( guy.bub_pos(), pos ) > 1 || !here.inbounds( pos ) ) {
         return fail( _( "That is too far away." ) );
     }
-    if( here.veh_at( pos ) ) {
-        return fail( _( "Using vehicles is not available in co-op yet." ) );
+    if( const optional_vpart_position vp = here.veh_at( pos ) ) {
+        // The vehicle's menu, for this player; its questions go to them.
+        vp->vehicle().interact_with( pos, vp->part_index(), &guy );
+        return action_result{};
     }
     if( here.has_flag( "CONSOLE", pos ) ) {
         return fail( _( "Using computers is not available in co-op yet." ) );
@@ -1584,6 +1627,101 @@ action_result do_disassemble( npc &guy, const JsonObject &jo )
     targets.emplace_back( *obj, batches );
     guy.assign_activity( std::make_unique<player_activity>( std::make_unique<disassemble_activity_actor>
                          ( std::move( targets ), guy.abs_pos(), false ) ) );
+    return action_result{};
+}
+
+// "Control vehicle" (^): take the wheel, or open the controls menu.
+action_result do_control_vehicle( npc &guy )
+{
+    const optional_vpart_position vp = get_map().veh_at( guy.bub_pos() );
+    if( !vp ) {
+        guy.controlling_vehicle = false;
+        return fail( _( "You aren't in a vehicle." ) );
+    }
+    vehicle &veh = vp->vehicle();
+    const bool has_controls = veh.part_with_feature( vp->part_index(), "CONTROLS", true ) >= 0;
+    if( !guy.controlling_vehicle && has_controls && veh.engine_on ) {
+        if( !veh.interact_vehicle_locked() ) {
+            return action_result{};
+        }
+        guy.controlling_vehicle = true;
+        guy.add_msg_if_player( _( "You take control of the %s." ), veh.name );
+        return action_result{};
+    }
+    veh.use_controls( guy.bub_pos(), &guy );
+    return action_result{};
+}
+
+// Steering while at the wheel: x turns, y accelerates or brakes.
+action_result do_drive( npc &guy, const JsonObject &jo )
+{
+    const optional_vpart_position vp = get_map().veh_at( guy.bub_pos() );
+    if( !vp || !guy.controlling_vehicle ) {
+        guy.controlling_vehicle = false;
+        return fail( _( "You aren't driving." ) );
+    }
+    vehicle &veh = vp->vehicle();
+    if( veh.part_with_feature( vp->part_index(), "CONTROLS", true ) < 0 &&
+        veh.part_with_feature( vp->part_index(), "CONTROL_ANIMAL", true ) < 0 ) {
+        guy.controlling_vehicle = false;
+        return fail( _( "You can't drive the vehicle from here.  You need controls!" ) );
+    }
+    const tripoint_rel_veh d( std::clamp( jo.get_int( "dx", 0 ), -1, 1 ),
+                              std::clamp( jo.get_int( "dy", 0 ), -1, 1 ), 0 );
+    const int before = guy.get_moves();
+    veh.pldrive( guy, d );
+    if( guy.get_moves() == before ) {
+        guy.mod_moves( -100 );
+    }
+    return action_result{};
+}
+
+// Throwing an item the player carries at the target they picked.
+action_result do_throw( npc &guy, const JsonObject &jo )
+{
+    bool on_ground = false;
+    item *it = find_action_item( guy, jo, on_ground );
+    if( it == nullptr || on_ground ) {
+        return fail( _( "You don't have that item." ) );
+    }
+    const tripoint_bub_ms target = abs_to_bub( tripoint_abs_ms( jo.get_int( "tx" ), jo.get_int( "ty" ),
+                                   jo.get_int( "tz" ) ) );
+    if( !get_map().inbounds( target ) || target == guy.bub_pos() ) {
+        return fail( std::string() );
+    }
+    if( guy.throw_range( *it ) <= 0 ) {
+        return fail( _( "That is too heavy to throw." ) );
+    }
+    if( guy.is_wielding( *it ) && it->has_flag( flag_id( "NO_UNWIELD" ) ) ) {
+        return fail( _( "That's part of your body, you can't throw that!" ) );
+    }
+    if( guy.is_worn( *it ) ) {
+        const ret_val<bool> ret = guy.can_takeoff( *it );
+        if( !ret.success() ) {
+            return fail( ret.str() );
+        }
+    }
+    if( it != &guy.primary_weapon() ) {
+        guy.mod_moves( -guy.item_handling_cost( *it, true, INVENTORY_HANDLING_PENALTY / 2 ) );
+    }
+    detached_ptr<item> thrown = it->split( 1 );
+    if( !thrown ) {
+        thrown = it->detach();
+    }
+    ranged::throw_item( guy, target, std::move( thrown ), std::nullopt );
+    return action_result{};
+}
+
+// Reach attack (spear, whip...) at the target the player picked.
+action_result do_reach( npc &guy, const tripoint_bub_ms &target )
+{
+    if( !get_map().inbounds( target ) || target == guy.bub_pos() ) {
+        return fail( std::string() );
+    }
+    if( !guy.is_armed() || guy.primary_weapon().reach_range( guy ) < rl_dist( guy.bub_pos(), target ) ) {
+        return fail( _( "That is out of your reach." ) );
+    }
+    guy.reach_attack( target );
     return action_result{};
 }
 
@@ -1779,6 +1917,18 @@ action_result execute( peer_t &p, npc &guy, message &m )
     }
     if( a == "jump" ) {
         return do_jump( guy, read_bub( jo ) );
+    }
+    if( a == "throw" ) {
+        return do_throw( guy, jo );
+    }
+    if( a == "reach" ) {
+        return do_reach( guy, read_bub( jo ) );
+    }
+    if( a == "control_vehicle" ) {
+        return do_control_vehicle( guy );
+    }
+    if( a == "drive" ) {
+        return do_drive( guy, jo );
     }
     return fail( _( "That action is not available in co-op yet." ) );
 }
@@ -2377,6 +2527,15 @@ int remote_choice( const std::string &text, const std::vector<std::string> &opti
     return pick >= 0 && pick < static_cast<int>( options.size() ) ? pick : -1;
 }
 
+player *remote_actor()
+{
+    if( !remote_prompts_active() ) {
+        return nullptr;
+    }
+    host::peer_t *p = host::find_peer( host::prompt_peer );
+    return p != nullptr ? host::proxy_of( *p ) : nullptr;
+}
+
 std::optional<tripoint_bub_ms> remote_actor_pos()
 {
     if( !remote_prompts_active() ) {
@@ -2406,6 +2565,54 @@ std::optional<tripoint_rel_ms> remote_direction( const std::string &prompt, bool
     return tripoint_rel_ms( std::clamp( jo.get_int( "dx", 0 ), -1, 1 ),
                             std::clamp( jo.get_int( "dy", 0 ), -1, 1 ),
                             allow_vertical ? std::clamp( jo.get_int( "dz", 0 ), -1, 1 ) : 0 );
+}
+
+std::vector<std::pair<int, int>> remote_choose_many( const std::string &title,
+                              const std::vector<std::string> &options, const std::vector<int> &max_counts )
+{
+    std::string opts;
+    std::string maxes;
+    for( size_t i = 0; i < options.size(); ++i ) {
+        opts += ( i ? "," : "" ) + json_quote( remove_color_tags( options[i] ) );
+        maxes += ( i ? "," : "" ) + std::to_string( i < max_counts.size() ? max_counts[i] : 1 );
+    }
+    std::vector<std::pair<int, int>> picks;
+    const std::optional<std::string> answer = ask_remote( "multi",
+            string_format( ",\"text\":%s,\"opts\":[%s],\"max\":[%s]",
+                           json_quote( remove_color_tags( title ) ), opts, maxes ) );
+    if( !answer ) {
+        return picks;
+    }
+    message m( *answer );
+    JsonObject jo = m.object();
+    for( JsonArray pick : jo.get_array( "picks" ) ) {
+        picks.emplace_back( pick.get_int( 0 ), pick.get_int( 1 ) );
+    }
+    return picks;
+}
+
+void remote_peek( const tripoint_rel_ms &dir )
+{
+    ask_remote( "peek", string_format( ",\"dx\":%d,\"dy\":%d,\"dz\":%d", dir.x(), dir.y(), dir.z() ) );
+}
+
+std::optional<tripoint_bub_ms> remote_target( const std::string &prompt, int range )
+{
+    const std::optional<std::string> answer = ask_remote( "target",
+            string_format( ",\"text\":%s,\"range\":%d", json_quote( remove_color_tags( prompt ) ), range ) );
+    if( !answer ) {
+        return std::nullopt;
+    }
+    message m( *answer );
+    JsonObject jo = m.object();
+    if( !jo.get_bool( "ok", false ) ) {
+        return std::nullopt;
+    }
+    const tripoint_bub_ms pos = host::read_bub( jo );
+    if( !get_map().inbounds( pos ) ) {
+        return std::nullopt;
+    }
+    return pos;
 }
 
 std::optional<tripoint_bub_ms> remote_tile( const std::string &prompt )

@@ -41,6 +41,7 @@
 #include "material.h"
 #include "math_defines.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "monster.h"
 #include "morale_types.h"
 #include "mtype.h"
@@ -2981,6 +2982,22 @@ int burst_penalty( const Character &p, const item &gun, int gun_recoil )
 
 target_handler::trajectory target_ui::run()
 {
+    // Co-op: targeting during a remote player's action (an item, a turret...)
+    // is theirs; the line goes from their character.
+    if( cata_mp::remote_prompts_active() ) {
+        player *actor = cata_mp::remote_actor();
+        if( actor == nullptr ) {
+            return {};
+        }
+        const std::string what = relevant != nullptr ? relevant->tname() : std::string();
+        const std::optional<tripoint_bub_ms> dst = cata_mp::remote_target(
+                    what.empty() ? _( "Select a target." ) : string_format( _( "Target for %s:" ), what ),
+                    range > 0 ? range : 60 );
+        if( !dst || *dst == actor->bub_pos() ) {
+            return {};
+        }
+        return line_to( actor->bub_pos(), *dst );
+    }
     if( mode == TargetMode::Spell && !no_mana && !casting->can_cast( *you ) ) {
         you->add_msg_if_player( m_bad, _( "You don't have enough %s to cast this spell" ),
                                 casting->energy_string() );

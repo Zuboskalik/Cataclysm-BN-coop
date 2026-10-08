@@ -2165,6 +2165,54 @@ std::vector<char> inventory_selector::all_bound_keys() const
     return retv;
 }
 
+// Co-op: during a remote player's action, picking several items is theirs.
+// Returns nullopt when no remote action runs, else the chosen entries with
+// how many of each.
+static std::optional<std::vector<std::pair<inventory_entry *, int>>> remote_pick_many(
+            const std::vector<inventory_column *> &columns, const std::string &title )
+{
+    if( !cata_mp::remote_prompts_active() ) {
+        return std::nullopt;
+    }
+    std::vector<inventory_entry *> entries;
+    std::vector<std::string> names;
+    std::vector<int> maxes;
+    for( inventory_column *col : columns ) {
+        for( inventory_entry *entry : col->get_all_entries() ) {
+            if( entry != nullptr && entry->is_item() && entry->is_selectable() ) {
+                entries.push_back( entry );
+                names.push_back( entry->any_item()->display_name() );
+                maxes.push_back( std::max( 1, static_cast<int>( entry->get_available_count() ) ) );
+            }
+        }
+    }
+    std::vector<std::pair<inventory_entry *, int>> chosen;
+    if( entries.empty() ) {
+        return chosen;
+    }
+    for( const auto &[index, count] : cata_mp::remote_choose_many( title, names, maxes ) ) {
+        if( index >= 0 && index < static_cast<int>( entries.size() ) && count > 0 ) {
+            chosen.emplace_back( entries[index], std::min( count, maxes[index] ) );
+        }
+    }
+    return chosen;
+}
+
+// Spreads a chosen count over the items an entry stands for.
+static std::vector<std::pair<item *, int>> spread_count( const inventory_entry &entry, int count )
+{
+    std::vector<std::pair<item *, int>> out;
+    for( item *it : entry.locations ) {
+        if( count <= 0 ) {
+            break;
+        }
+        const int take = std::min( count, it->count() );
+        out.emplace_back( it, take );
+        count -= take;
+    }
+    return out;
+}
+
 item *inventory_pick_selector::execute()
 {
     // Co-op: picking an item during a remote player's action is theirs to do.
@@ -2375,6 +2423,15 @@ inventory_iuse_selector::inventory_iuse_selector(
 
 std::vector<iuse_location> inventory_iuse_selector::execute()
 {
+    if( const auto remote = remote_pick_many( get_all_columns(), get_title() ) ) {
+        std::vector<iuse_location> ret;
+        for( const auto &[entry, count] : *remote ) {
+            for( const auto &[it, n] : spread_count( *entry, count ) ) {
+                ret.emplace_back( *it, n );
+            }
+        }
+        return ret;
+    }
     shared_ptr_fast<ui_adaptor> ui = create_or_get_ui_adaptor();
 
     int count = 0;
@@ -2510,6 +2567,15 @@ void inventory_drop_selector::process_selected( int &count,
 
 drop_locations inventory_drop_selector::execute()
 {
+    if( const auto remote = remote_pick_many( get_all_columns(), get_title() ) ) {
+        drop_locations ret;
+        for( const auto &[entry, count] : *remote ) {
+            for( const auto &[it, n] : spread_count( *entry, count ) ) {
+                ret.emplace_back( *it, n );
+            }
+        }
+        return ret;
+    }
     shared_ptr_fast<ui_adaptor> ui = create_or_get_ui_adaptor();
     this->keep_open = false;
 
@@ -2665,6 +2731,20 @@ inventory_pickup_selector::inventory_pickup_selector( player &p,
 
 std::vector<pickup::pick_drop_selection> inventory_pickup_selector::execute()
 {
+    if( const auto remote = remote_pick_many( get_all_columns(), get_title() ) ) {
+        std::vector<pickup::pick_drop_selection> ret;
+        for( const auto &[entry, count] : *remote ) {
+            for( const auto &[it, n] : spread_count( *entry, count ) ) {
+                pickup::pick_drop_selection sel;
+                sel.target = it;
+                if( it->count_by_charges() ) {
+                    sel.quantity = n;
+                }
+                ret.push_back( std::move( sel ) );
+            }
+        }
+        return ret;
+    }
     shared_ptr_fast<ui_adaptor> ui = create_or_get_ui_adaptor();
 
     while( true ) {

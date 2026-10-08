@@ -60,6 +60,7 @@
 #include "ui.h"
 #include "ui_manager.h"
 #include "trap.h"
+#include "vehicle/vehicle.h"
 #include "vehicle/vpart_position.h"
 #include "weather/weather.h"
 #include "world.h"
@@ -435,6 +436,7 @@ void apply_state( message &m )
     if( jo.has_member( "you" ) ) {
         try {
             u.mp_mirror_load( *jo.get_raw( "you" ) );
+            u.controlling_vehicle = jo.get_bool( "driving", false );
         } catch( const std::exception &e ) {
             log( std::string( "mirror failed: " ) + e.what() );
         }
@@ -664,24 +666,41 @@ std::string choose_pickup( const tripoint_bub_ms &pos )
     for( item *it : here.i_at( pos ) ) {
         ground.push_back( it );
     }
+    // A vehicle's cargo space there is offered too.
+    std::vector<item *> cargo;
+    if( const optional_vpart_position vp = here.veh_at( pos ) ) {
+        const int part = vp->vehicle().part_with_feature( vp->part_index(), "CARGO", false );
+        if( part >= 0 ) {
+            for( item *it : vp->vehicle().get_items( part ) ) {
+                cargo.push_back( it );
+            }
+        }
+    }
     std::string list;
     for( const pickup::pick_drop_selection &sel : picked ) {
         const item *target = sel.target.get();
-        const auto found = std::find( ground.begin(), ground.end(), target );
+        bool in_cargo = false;
+        auto found = std::find( ground.begin(), ground.end(), target );
+        std::vector<item *> *pile = &ground;
         if( found == ground.end() ) {
-            continue;
+            found = std::find( cargo.begin(), cargo.end(), target );
+            if( found == cargo.end() ) {
+                continue;
+            }
+            in_cargo = true;
+            pile = &cargo;
         }
-        const int index = static_cast<int>( found - ground.begin() );
-        const int ordinal = static_cast<int>( std::count_if( ground.begin(), found,
+        const int index = static_cast<int>( found - pile->begin() );
+        const int ordinal = static_cast<int>( std::count_if( pile->begin(), found,
         [target]( const item * g ) {
             return g->typeId() == target->typeId();
         } ) );
         list += list.empty() ? "" : ",";
-        list += string_format( "[%d,%d,%s,%d]", index, sel.quantity.value_or( 0 ),
-                               json_quote( target->typeId().str() ), ordinal );
+        list += string_format( "[%d,%d,%s,%d%s]", index, sel.quantity.value_or( 0 ),
+                               json_quote( target->typeId().str() ), ordinal, in_cargo ? ",1" : "" );
     }
     if( list.empty() ) {
-        add_msg( m_info, _( "You can only pick up loose items from the ground in co-op." ) );
+        add_msg( m_info, _( "Those items can't be picked up in co-op yet." ) );
     }
     return list;
 }
@@ -745,6 +764,16 @@ void request_craft( const bool is_long, const bool again )
 void request_fire()
 {
     avatar &u = get_avatar();
+    // A reach weapon (spear, whip...) attacks at a distance instead.
+    if( u.is_armed() && !( u.primary_weapon().is_gun() &&
+                           !u.primary_weapon().gun_current_mode().melee() ) &&
+        u.primary_weapon().reach_range( u ) > 1 ) {
+        const target_handler::trajectory traj = target_handler::mode_reach( u, u.primary_weapon() );
+        if( !traj.empty() ) {
+            send_action( "reach", pos_fields( traj.back() ) );
+        }
+        return;
+    }
     if( !u.is_armed() || !u.primary_weapon().is_gun() ) {
         add_msg( m_info, _( "You are not wielding a gun." ) );
         return;
@@ -815,6 +844,34 @@ std::optional<std::string> any_item_fields( item *it )
         return item_fields( it );
     }
     return ground_item_fields( it );
+}
+
+// Throwing: pick the item and aim with the usual targeting UI here; the host
+// throws it.  The target goes as tx/ty/tz (x/y/z address the item).
+void request_throw()
+{
+    avatar &u = get_avatar();
+    item *it = game_menus::inv::titled_menu( u, _( "Throw item" ),
+               _( "You don't have any items to throw." ) );
+    if( it == nullptr ) {
+        return;
+    }
+    if( item_index_of( u, it ) < 0 ) {
+        add_msg( m_info, _( "You don't have that item." ) );
+        return;
+    }
+    const int range = u.throw_range( *it );
+    if( range == 0 ) {
+        add_msg( m_info, _( "That is too heavy to throw." ) );
+        return;
+    }
+    const target_handler::trajectory traj = target_handler::mode_throw( u, *it, false );
+    if( traj.empty() ) {
+        return;
+    }
+    const tripoint_abs_ms abs = bub_to_abs( traj.back() );
+    send_action( "throw", item_fields( it ) + string_format( ",\"tx\":%d,\"ty\":%d,\"tz\":%d",
+                 abs.x(), abs.y(), abs.z() ) );
 }
 
 // The wield menu also offers items lying next to the character.
@@ -1173,6 +1230,94 @@ void answer_question( message &m )
                 jo.get_bool( "vertical", false ) );
         reply = dir ? string_format( ",\"ok\":true,\"dx\":%d,\"dy\":%d,\"dz\":%d", dir->x(), dir->y(),
                                      dir->z() ) : ",\"ok\":false";
+    } else if( kind == "peek" ) {
+        g->peek( tripoint_rel_ms( jo.get_int( "dx", 0 ), jo.get_int( "dy", 0 ), jo.get_int( "dz", 0 ) ) );
+    } else if( kind == "multi" ) {
+        // Several items: tick them (with an amount when there are several),
+        // then confirm.
+        std::vector<std::string> opts;
+        std::vector<int> maxes;
+        jo.read( "opts", opts );
+        jo.read( "max", maxes );
+        std::vector<int> chosen( opts.size(), 0 );
+        bool confirmed = false;
+        int cursor = 0;
+        while( true ) {
+            uilist menu;
+            menu.text = jo.get_string( "text", "" ) + "\n" +
+                        _( "Select items, then choose \"Done\"." );
+            for( size_t i = 0; i < opts.size(); ++i ) {
+                const int max = i < maxes.size() ? maxes[i] : 1;
+                const std::string mark = chosen[i] == 0 ? "[ ] " : max > 1 ?
+                                         string_format( "[%d] ", chosen[i] ) : "[x] ";
+                menu.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, mark + opts[i] );
+            }
+            const int done = static_cast<int>( opts.size() );
+            menu.addentry( done, true, 'D', _( "Done" ) );
+            menu.selected = cursor;
+            menu.query();
+            if( menu.ret == done ) {
+                confirmed = true;
+                break;
+            }
+            if( menu.ret < 0 || menu.ret >= done ) {
+                break;
+            }
+            cursor = menu.ret;
+            const int max = menu.ret < static_cast<int>( maxes.size() ) ? maxes[menu.ret] : 1;
+            if( chosen[menu.ret] > 0 ) {
+                chosen[menu.ret] = 0;
+            } else if( max > 1 ) {
+                string_input_popup amount;
+                amount.title( string_format( _( "How many (max %d)?" ), max ) )
+                .text( std::to_string( max ) )
+                .only_digits( true );
+                const int n = amount.query_int();
+                if( !amount.canceled() ) {
+                    chosen[menu.ret] = std::clamp( n, 0, max );
+                }
+            } else {
+                chosen[menu.ret] = 1;
+            }
+        }
+        std::string picks;
+        if( confirmed ) {
+            for( size_t i = 0; i < chosen.size(); ++i ) {
+                if( chosen[i] > 0 ) {
+                    picks += picks.empty() ? "" : ",";
+                    picks += string_format( "[%d,%d]", static_cast<int>( i ), chosen[i] );
+                }
+            }
+        }
+        reply = ",\"picks\":[" + picks + "]";
+    } else if( kind == "target" ) {
+        // Targeting inside our action (an item, a turret...): a creature in
+        // range, or any spot.
+        avatar &u = get_avatar();
+        const int range = std::max( 1, jo.get_int( "range", 60 ) );
+        std::vector<Creature *> targets = g->get_creatures_if( [&]( const Creature & c ) {
+            return &c != &u && u.sees( c ) && rl_dist( u.bub_pos(), c.bub_pos() ) <= range &&
+                   c.attitude_to( u ) == Attitude::A_HOSTILE;
+        } );
+        std::sort( targets.begin(), targets.end(), [&u]( const Creature * a, const Creature * b ) {
+            return rl_dist( u.bub_pos(), a->bub_pos() ) < rl_dist( u.bub_pos(), b->bub_pos() );
+        } );
+        uilist menu;
+        menu.text = jo.get_string( "text", "" );
+        for( size_t i = 0; i < targets.size(); ++i ) {
+            menu.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, string_format( _( "%1$s (%2$d)" ),
+                           targets[i]->disp_name(), rl_dist( u.bub_pos(), targets[i]->bub_pos() ) ) );
+        }
+        const int pick_spot = static_cast<int>( targets.size() );
+        menu.addentry( pick_spot, true, 's', _( "Choose a spot…" ) );
+        menu.query();
+        std::optional<tripoint_bub_ms> pos;
+        if( menu.ret >= 0 && menu.ret < pick_spot ) {
+            pos = targets[menu.ret]->bub_pos();
+        } else if( menu.ret == pick_spot ) {
+            pos = g->look_around();
+        }
+        reply = pos ? ",\"ok\":true" + pos_fields( *pos ) : ",\"ok\":false";
     } else if( kind == "tile" ) {
         add_msg( m_info, "%s", jo.get_string( "text", "" ) );
         const std::optional<tripoint_bub_ms> pos = g->look_around();
@@ -1602,10 +1747,19 @@ bool client_intercept_action( action_id act,
         case ACTION_MOVE_BACK_LEFT:
         case ACTION_MOVE_LEFT:
         case ACTION_MOVE_FORTH_LEFT: {
+            if( u.controlling_vehicle ) {
+                // At the wheel the keys steer (x) and accelerate/brake (y).
+                const point_rel_ms d = get_delta_from_movement_action( act, iso_rotate::no );
+                client::send_action( "drive", string_format( ",\"dx\":%d,\"dy\":%d", d.x(), d.y() ) );
+                return true;
+            }
             const point_rel_ms d = get_delta_from_movement_action( act, iso_rotate::yes );
             client::send_action( "move", string_format( ",\"dx\":%d,\"dy\":%d", d.x(), d.y() ) );
             return true;
         }
+        case ACTION_CONTROL_VEHICLE:
+            client::send_action( "control_vehicle" );
+            return true;
         case ACTION_MOVE_DOWN:
             client::send_action( "vmove", ",\"dz\":-1" );
             return true;
@@ -1613,6 +1767,11 @@ bool client_intercept_action( action_id act,
             client::send_action( "vmove", ",\"dz\":1" );
             return true;
         case ACTION_PAUSE:
+            if( u.controlling_vehicle ) {
+                // At the wheel, waiting means keeping the vehicle going.
+                client::send_action( "drive", ",\"dx\":0,\"dy\":0" );
+                return true;
+            }
             client::send_action( "pause" );
             return true;
         case ACTION_WAIT: {
@@ -1746,6 +1905,9 @@ bool client_intercept_action( action_id act,
             return true;
         case ACTION_FIRE:
             client::request_fire();
+            return true;
+        case ACTION_THROW:
+            client::request_throw();
             return true;
         case ACTION_AUTOATTACK:
             client::request_autoattack();

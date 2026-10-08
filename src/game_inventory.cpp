@@ -28,6 +28,7 @@
 #include "iuse_actor.h"
 #include "map/map.h"
 #include "material.h"
+#include "mp_session.h"
 #include "npc.h"
 #include "options.h"
 #include "output.h"
@@ -168,12 +169,16 @@ bool inventory_filter_preset::is_shown( const item *location ) const
     return filter( *location );
 }
 
-static item *inv_internal( player &u, const inventory_selector_preset &preset,
+static item *inv_internal( player &who, const inventory_selector_preset &preset,
                            const std::string &title, int radius,
                            const std::string &none_message,
                            const std::string &hint = std::string(),
                            bool include_fake_items = false )
 {
+    // Co-op: item use code often asks the avatar to pick from its inventory;
+    // during a remote player's action it means that player's character.
+    player *remote = who.is_avatar() ? cata_mp::remote_actor() : nullptr;
+    player &u = remote != nullptr ? *remote : who;
     inventory_pick_selector inv_s( u, preset );
 
     inv_s.set_title( title );

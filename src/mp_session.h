@@ -15,6 +15,7 @@
 #include <optional>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "action.h"
@@ -25,6 +26,7 @@ class JsonIn;
 class main_menu;
 class monster;
 class npc;
+class player;
 struct game_message_params;
 
 namespace cata_mp
@@ -110,10 +112,21 @@ int remote_choice( const std::string &text, const std::vector<std::string> &opti
                    const std::vector<bool> &enabled, bool allow_cancel );
 // Shows a message to the remote player without waiting for an answer.
 void remote_message( const std::string &text );
+// The character of the remote player whose action is running, if any.
+player *remote_actor();
 // Where the remote player's character stands; "adjacent" means next to it.
 std::optional<tripoint_bub_ms> remote_actor_pos();
 // The remote player picks a direction (like choose_direction).
 std::optional<tripoint_rel_ms> remote_direction( const std::string &message, bool allow_vertical );
+// The remote player peeks in direction `dir` from their character (a view
+// on their own screen).
+void remote_peek( const tripoint_rel_ms &dir );
+// The remote player picks several of `options` (up to max_counts[i] of
+// each).  Returns (index, count) pairs; empty if cancelled.
+std::vector<std::pair<int, int>> remote_choose_many( const std::string &title,
+                              const std::vector<std::string> &options, const std::vector<int> &max_counts );
+// The remote player picks a target within `range` of their character.
+std::optional<tripoint_bub_ms> remote_target( const std::string &prompt, int range );
 // The remote player picks a map tile (like game::look_around).
 std::optional<tripoint_bub_ms> remote_tile( const std::string &message );
 // Picking up items at `pos` is the remote player's: they choose, their

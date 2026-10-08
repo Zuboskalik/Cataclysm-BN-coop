@@ -123,7 +123,7 @@ void vehicle::thrust(int thd, int z) {
         turn_dir = face.dir();
         stop();
     }
-    bool pl_ctrl = player_in_control(get_player_character());
+    bool pl_ctrl = driven_by_player();
 
     // No need to change velocity if there are no wheels
     if ((in_water && can_float()) || (is_aircraft() && (z != 0 || is_flying))) {
