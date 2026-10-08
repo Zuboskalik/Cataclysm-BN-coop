@@ -1031,7 +1031,9 @@ void npc::finish_read( item *it )
     const skill_id &skill = reading->skill;
     // NPCs don't need to identify the book or learn recipes yet.
     // NPCs don't read to other NPCs yet.
-    const bool display_messages = my_fac->id == faction_id( "your_followers" ) &&
+    // A co-op player's character tells its own player instead.
+    const bool coop_player = cata_mp::is_proxy( *this );
+    const bool display_messages = !coop_player && my_fac->id == faction_id( "your_followers" ) &&
                                   g->u.sees( bub_pos() );
     bool continuous = false; //whether to continue reading or not
 
@@ -1086,11 +1088,19 @@ void npc::finish_read( item *it )
             if( display_messages ) {
                 add_msg( m_good, _( "%s increases their %s level." ), disp_name(), skill_name );
             }
+            if( coop_player ) {
+                add_msg_if_player( m_good, _( "You increase %s to level %d." ), skill_name,
+                                   skill_level.level() );
+            }
             continuous = true;
         } else {
             continuous = true;
             if( display_messages ) {
                 add_msg( m_info, _( "%s learns a little about %s!" ), disp_name(), skill.obj().name() );
+            }
+            if( coop_player ) {
+                add_msg_if_player( m_info, _( "You learn a little about %s!  (%d%%)" ), skill.obj().name(),
+                                   skill_level.exercise() );
             }
         }
 
@@ -1108,6 +1118,10 @@ void npc::finish_read( item *it )
     }
 
     // NPCs can't learn martial arts from manuals (yet)
+
+    if( coop_player && !continuous ) {
+        add_msg_if_player( m_info, _( "You finish reading %s." ), book.type_name() );
+    }
 
     if( continuous ) {
         activity->set_to_null();

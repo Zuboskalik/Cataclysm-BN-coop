@@ -20,6 +20,7 @@
 #include "map/mapdata.h"
 #include "map_iterator.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "options.h"
 #include "output.h"
 #include "path_info.h"
@@ -225,6 +226,7 @@ std::string io::enum_to_string<action_id>( action_id data )
             PAIR( ACTION_SWAP_TO_NPC )
             PAIR( ACTION_COOP_CHAT )
             PAIR( ACTION_COOP_MENU )
+            PAIR( ACTION_COOP_PLAYERS )
         case NUM_ACTIONS:
             break;
     }
@@ -565,6 +567,8 @@ std::string action_ident( action_id act )
             return "coop_chat";
         case ACTION_COOP_MENU:
             return "coop_menu";
+        case ACTION_COOP_PLAYERS:
+            return "coop_players";
         default:
             return "unknown";
     }
@@ -643,6 +647,7 @@ bool can_action_change_worldstate( const action_id act )
         case ACTION_TOGGLE_AUTO_FORAGING:
         case ACTION_COOP_CHAT:
         case ACTION_COOP_MENU:
+        case ACTION_COOP_PLAYERS:
             return false;
         default:
             return true;
@@ -1269,9 +1274,19 @@ action_id handle_main_menu()
     }
 }
 
+// Co-op: while the host runs a remote player's action, "adjacent" means next
+// to that player's character, not the host's.
+static tripoint_bub_ms acting_character_pos()
+{
+    return cata_mp::remote_actor_pos().value_or( g->u.bub_pos() );
+}
+
 std::optional<tripoint_rel_ms> choose_direction( const std::string &message,
         const bool allow_vertical )
 {
+    if( cata_mp::remote_prompts_active() ) {
+        return cata_mp::remote_direction( message, allow_vertical );
+    }
     input_context ctxt( "DEFAULTMODE" );
     ctxt.set_iso( true );
     ctxt.register_directions();
@@ -1321,12 +1336,13 @@ std::optional<tripoint_bub_ms> choose_adjacent( const std::string &message,
         return std::nullopt;
     }
 
-    if( get_map().obstructed_by_vehicle_rotation( g->u.bub_pos(), *dir + g->u.bub_pos() ) ) {
+    const tripoint_bub_ms origin = acting_character_pos();
+    if( get_map().obstructed_by_vehicle_rotation( origin, *dir + origin ) ) {
         add_msg( _( "You can't reach through that vehicle's wall." ) );
         return std::nullopt;
     }
 
-    return *dir + g->u.bub_pos();
+    return *dir + origin;
 }
 
 std::optional<tripoint_bub_ms> choose_adjacent_highlight( const std::string &message,
@@ -1347,8 +1363,9 @@ std::optional<tripoint_bub_ms> choose_adjacent_highlight(
     std::vector<tripoint_bub_ms> valid;
     map &here = get_map();
     if( allowed ) {
-        for( const tripoint_bub_ms &pos : here.points_in_radius( g->u.bub_pos(), 1 ) ) {
-            if( !here.obstructed_by_vehicle_rotation( g->u.bub_pos(), pos ) && allowed( pos ) ) {
+        const tripoint_bub_ms origin = acting_character_pos();
+        for( const tripoint_bub_ms &pos : here.points_in_radius( origin, 1 ) ) {
+            if( !here.obstructed_by_vehicle_rotation( origin, pos ) && allowed( pos ) ) {
                 valid.emplace_back( pos );
             }
         }
@@ -1412,7 +1429,7 @@ std::optional<tripoint_bub_ms> choose_adjacent_uilist(
 
     std::vector<tripoint_bub_ms> valid;
     const map &here = get_map();
-    const auto center = g->u.bub_pos();
+    const auto center = acting_character_pos();
     if( allowed ) {
         for( const auto &pos : here.points_in_radius( center, 1, 0 ) ) {
             if( !here.obstructed_by_vehicle_rotation( center, pos ) && allowed( pos ) ) {

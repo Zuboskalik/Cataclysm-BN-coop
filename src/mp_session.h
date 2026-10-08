@@ -110,6 +110,18 @@ int remote_choice( const std::string &text, const std::vector<std::string> &opti
                    const std::vector<bool> &enabled, bool allow_cancel );
 // Shows a message to the remote player without waiting for an answer.
 void remote_message( const std::string &text );
+// Where the remote player's character stands; "adjacent" means next to it.
+std::optional<tripoint_bub_ms> remote_actor_pos();
+// The remote player picks a direction (like choose_direction).
+std::optional<tripoint_rel_ms> remote_direction( const std::string &message, bool allow_vertical );
+// The remote player picks a map tile (like game::look_around).
+std::optional<tripoint_bub_ms> remote_tile( const std::string &message );
+// Picking up items at `pos` is the remote player's: they choose, their
+// character takes them.  Returns false when no remote action is running.
+bool remote_pickup( const tripoint_bub_ms &pos );
+// The remote player types text (like string_input_popup); nullopt if cancelled.
+std::optional<std::string> remote_text( const std::string &title, const std::string &description,
+                                        const std::string &initial, bool only_digits, int max_length );
 
 // Seed for picking the monster's sprite variant; the same on host and client.
 uintptr_t monster_sprite_seed( const monster &mon );
@@ -128,6 +140,8 @@ void host_died();
 // ---- UI ---------------------------------------------------------------------
 
 void open_chat();
+// Host: options for the other players at any time (F2).
+void open_players_menu();
 void open_menu();
 // One short line for the sidebar/status, empty when no session is running.
 std::string status_line();

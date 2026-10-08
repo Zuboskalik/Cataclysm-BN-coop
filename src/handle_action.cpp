@@ -2879,6 +2879,10 @@ bool game::handle_action()
                 cata_mp::open_menu();
                 break;
 
+            case ACTION_COOP_PLAYERS:
+                cata_mp::open_players_menu();
+                break;
+
             case ACTION_SAVE:
                 if( query_yn( _( "Save and quit?" ) ) ) {
                     if( save( true ) ) {

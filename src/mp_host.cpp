@@ -14,10 +14,13 @@
 #include <thread>
 #include <sstream>
 
+#include "activity_actor_definitions.h"
 #include "avatar.h"
 #include "calendar.h"
 #include "character.h"
+#include "character_functions.h"
 #include "character_turn.h"
+#include "crafting.h"
 #include "creature.h"
 #include "debug.h"
 #include "effect.h"
@@ -30,6 +33,7 @@
 #include "gun_mode.h"
 #include "input.h"
 #include "item.h"
+#include "item_handling_util.h"
 #include "line.h"
 #include "map/map.h"
 #include "map/mapbuffer.h"
@@ -43,16 +47,20 @@
 #include "mp_net.h"
 #include "npc.h"
 #include "overmap/omdata.h"
+#include "options.h"
 #include "output.h"
 #include "overmap/overmapbuffer.h"
 #include "player_activity.h"
 #include "popup.h"
 #include "ranged.h"
 #include "recipe.h"
+#include "recipe_dictionary.h"
+#include "skill.h"
 #include "requirements.h"
 #include "itype.h"
 #include "reload/reload_selection.h"
 #include "string_formatter.h"
+#include "string_input_popup.h"
 #include "string_utils.h"
 #include "translations.h"
 #include "trap.h"
@@ -131,7 +139,8 @@ std::map<int, peer_t> peers;
 // that player (prompt_peer); their answers arrive by question id.
 int prompt_peer = -1;
 int next_question_id = 1;
-std::map<int, int> answers;
+// Raw answer messages by question id.
+std::map<int, std::string> answers;
 
 struct prompt_scope {
     int saved;
@@ -1460,25 +1469,155 @@ action_result do_examine( npc &guy, const tripoint_bub_ms &pos )
     return action_result{};
 }
 
+// The item an action is about: carried (idx/ord/name), or lying next to
+// the player (x/y/z plus gidx/ord within that pile).
+item *find_action_item( npc &guy, const JsonObject &jo, bool &on_ground )
+{
+    on_ground = jo.has_int( "gidx" );
+    if( on_ground ) {
+        const tripoint_bub_ms pos = read_bub( jo );
+        if( rl_dist( guy.bub_pos(), pos ) > 1 || !get_map().inbounds( pos ) ) {
+            return nullptr;
+        }
+        return resolve_ground_item( ground_items( pos ), jo.get_int( "gidx" ),
+                                    jo.get_string( "type", "" ), jo.get_int( "ord", -1 ) );
+    }
+    return find_carried_item( guy, jo.get_int( "idx", -1 ), jo.get_string( "type", "" ),
+                              jo.get_int( "ord", -1 ), jo.get_string( "name", "" ) );
+}
+
 // "Read" (R).  NPCs read only to learn a skill, so books just for fun
 // can't be read this way yet.
 action_result do_read( npc &guy, const JsonObject &jo )
 {
-    item *book = find_carried_item( guy, jo.get_int( "idx", -1 ), jo.get_string( "type", "" ),
-                                    jo.get_int( "ord", -1 ), jo.get_string( "name", "" ) );
+    bool on_ground = false;
+    item *book = find_action_item( guy, jo, on_ground );
     if( book == nullptr ) {
         return fail( _( "You no longer have that." ) );
     }
-    std::vector<std::string> reasons;
-    if( !guy.can_read( *book, reasons ) ) {
-        std::string why;
-        for( const std::string &r : reasons ) {
-            why += why.empty() ? r : "  " + r;
-        }
-        return fail( why.empty() ? _( "You can't read that." ) : why );
+    // npc::can_read only allows books that teach a skill; a player may also
+    // read for fun, so check like the player's own reading does.
+    if( !book->is_book() ) {
+        return fail( string_format( _( "Your %s is not good reading material." ), book->tname() ) );
+    }
+    const auto &reading = book->type->book;
+    const skill_id &skill = reading->skill;
+    if( reading->intel > 0 && guy.has_trait( trait_id( "ILLITERATE" ) ) ) {
+        return fail( _( "You're illiterate!" ) );
+    }
+    if( guy.has_trait( trait_id( "HYPEROPIC" ) ) && !guy.worn_with_flag( flag_id( "FIX_FARSIGHT" ) ) &&
+        !guy.has_effect( efftype_id( "contacts" ) ) && !guy.has_bionic( bionic_id( "bio_eye_optic" ) ) ) {
+        return fail( _( "Your eyes won't focus without reading glasses." ) );
+    }
+    if( !character_funcs::can_see_fine_details( guy ) ) {
+        return fail( _( "It's too dark to read!" ) );
+    }
+    if( skill && guy.get_skill_level( skill ) < reading->req ) {
+        return fail( string_format( _( "You need %s %d to understand the jargon!" ), skill.obj().name(),
+                                    reading->req ) );
+    }
+    const bool learns = skill && guy.get_skill_level( skill ) < reading->level;
+    const bool fun = character_funcs::get_book_fun_for( guy, *book ) > 0;
+    if( !learns && !fun && skill ) {
+        return fail( _( "You won't learn anything from this book." ) );
+    }
+    if( !fun && !guy.has_morale_to_read() ) {
+        return fail( _( "What's the point of studying?  (Your morale is too low!)" ) );
     }
     guy.start_read( *book, &guy );
     guy.add_msg_if_player( m_info, _( "Now reading %s." ), book->type_name() );
+    return action_result{};
+}
+
+// "Disassemble" ('('), following crafting's prompt_disassemble_single (which
+// only takes the avatar).  Its questions go to the player through the remote
+// prompts, since this runs inside their action.
+action_result do_disassemble( npc &guy, const JsonObject &jo )
+{
+    bool on_ground = false;
+    item *obj = find_action_item( guy, jo, on_ground );
+    if( obj == nullptr ) {
+        return fail( _( "You no longer have that." ) );
+    }
+    const ret_val<bool> can = crafting::can_disassemble( guy, *obj, guy.crafting_inventory() );
+    if( !can.success() ) {
+        return fail( can.str() );
+    }
+    const recipe &r = recipe_dictionary::get_uncraft( obj->typeId() );
+    const int batch_size = r.disassembly_batch_size();
+    if( get_option<bool>( "QUERY_DISASSEMBLE" ) ) {
+        std::string msg = string_format( _( "Disassembling the %s may yield:\n" ), obj->tname() );
+        for( const item_comp &component : obj->get_uncraft_components() ) {
+            msg += "- " + component.to_string() + "\n";
+        }
+        if( batch_size != 1 ) {
+            msg += string_format( _( "(per batch of %d)\n" ), batch_size );
+        }
+        msg += "\n";
+        msg += _( "Really disassemble?\n" );
+        if( !query_yn( msg ) ) {
+            return fail( _( "Never mind." ) );
+        }
+    }
+    int batches = 1;
+    if( obj->count_by_charges() ) {
+        const int max_batches = obj->charges / std::max( 1, batch_size );
+        if( max_batches == 0 ) {
+            return fail( string_format( _( "You need at least %d to disassemble that." ), batch_size ) );
+        }
+        if( max_batches > 1 ) {
+            string_input_popup popup_input;
+            popup_input.title( string_format( _( "Disassemble how many batches of %s [MAX: %d]: " ),
+                                              obj->type_name( 1 ), max_batches ) )
+            .width( 20 )
+            .only_digits( true );
+            const int wanted = popup_input.query_int();
+            if( popup_input.canceled() || wanted <= 0 ) {
+                return fail( _( "Never mind." ) );
+            }
+            batches = std::min( wanted, max_batches );
+        } else {
+            batches = max_batches;
+        }
+    }
+    std::vector<iuse_location> targets;
+    targets.emplace_back( *obj, batches );
+    guy.assign_activity( std::make_unique<player_activity>( std::make_unique<disassemble_activity_actor>
+                         ( std::move( targets ), guy.abs_pos(), false ) ) );
+    return action_result{};
+}
+
+// "Jump" over an adjacent obstacle.
+action_result do_jump( npc &guy, const tripoint_bub_ms &pos )
+{
+    if( rl_dist( guy.bub_pos(), pos ) != 1 ) {
+        return fail( _( "That is too far away." ) );
+    }
+    if( !iexamine::can_start_jump_over_tile( guy ) || !iexamine::can_jump_over_tile( guy, pos ) ) {
+        return fail( _( "You can't jump across there." ) );
+    }
+    iexamine::jump_over_tile( guy, pos );
+    return action_result{};
+}
+
+// Movement mode: "cycle" (like avatar::cycle_move_mode) or an explicit mode.
+action_result do_move_mode( npc &guy, const JsonObject &jo )
+{
+    if( jo.get_bool( "cycle", false ) ) {
+        int mode = ( static_cast<int>( guy.get_movement_mode() ) + 1 ) % CMM_COUNT;
+        guy.set_movement_mode( static_cast<character_movemode>( mode ) );
+        // A mode that can't be used right now is skipped.
+        if( !guy.movement_mode_is( static_cast<character_movemode>( mode ) ) ) {
+            mode = ( mode + 1 ) % CMM_COUNT;
+            guy.set_movement_mode( static_cast<character_movemode>( mode ) );
+        }
+        return action_result{};
+    }
+    const int mode = jo.get_int( "mode", CMM_WALK );
+    if( mode < CMM_WALK || mode >= CMM_COUNT ) {
+        return fail( std::string() );
+    }
+    guy.set_movement_mode( static_cast<character_movemode>( mode ) );
     return action_result{};
 }
 
@@ -1513,10 +1652,14 @@ action_result do_butcher( npc &guy, const JsonObject &jo )
 // the use method when the item has several.
 action_result do_use( npc &guy, const JsonObject &jo )
 {
-    item *it = find_carried_item( guy, jo.get_int( "idx", -1 ), jo.get_string( "type", "" ),
-                                  jo.get_int( "ord", -1 ), jo.get_string( "name", "" ) );
+    bool on_ground = false;
+    item *it = find_action_item( guy, jo, on_ground );
     if( it == nullptr ) {
-        return fail( _( "You no longer have that." ) );
+        return fail( on_ground ? _( "That is no longer there." ) : _( "You no longer have that." ) );
+    }
+    // Like the player: most things are picked up to be used.
+    if( on_ground && !it->has_flag( flag_id( "ALLOWS_REMOTE_USE" ) ) ) {
+        it = &it->obtain( guy );
     }
     const std::string method = jo.get_string( "method", "" );
     const int before = guy.get_moves();
@@ -1629,12 +1772,13 @@ action_result execute( peer_t &p, npc &guy, message &m )
         return do_cycle_fire_mode( guy );
     }
     if( a == "move_mode" ) {
-        const int mode = jo.get_int( "mode", CMM_WALK );
-        if( mode < CMM_WALK || mode >= CMM_COUNT ) {
-            return fail( std::string() );
-        }
-        guy.set_movement_mode( static_cast<character_movemode>( mode ) );
-        return action_result{};
+        return do_move_mode( guy, jo );
+    }
+    if( a == "disassemble" ) {
+        return do_disassemble( guy, jo );
+    }
+    if( a == "jump" ) {
+        return do_jump( guy, read_bub( jo ) );
     }
     return fail( _( "That action is not available in co-op yet." ) );
 }
@@ -1801,7 +1945,7 @@ void handle_line( int peer, const std::string &line )
         broadcast_chat( p->name, jo.get_string( "text", "" ) );
     } else if( t == "answer" ) {
         JsonObject jo = m.object();
-        answers[jo.get_int( "id", 0 )] = jo.get_int( "i", -1 );
+        answers[jo.get_int( "id", 0 )] = line;
     } else if( t == "stop_wait" ) {
         npc *proxy = proxy_of( *p );
         if( p->auto_wait_turns > 0 ) {
@@ -1956,6 +2100,11 @@ bool host_proxy_turn( npc &guy )
         host::place_npc_near_host( guy );
         guy.add_msg_if_player( m_info, _( "You catch up with %s." ), get_avatar().get_name() );
     }
+    // The player looks around for hidden traps each turn; the game only does
+    // that for the avatar.
+    if( guy.get_moves() > 0 ) {
+        character_funcs::search_surroundings( guy );
+    }
     int guard = 0;
     while( !guy.is_dead() && guy.get_moves() > 0 && guard++ < 64 ) {
         p = host::find_peer( peer_id );
@@ -2080,6 +2229,78 @@ void host_died()
     }
 }
 
+void open_players_menu()
+{
+    if( is_client() ) {
+        add_msg( m_info, _( "Only the host can manage players." ) );
+        return;
+    }
+    if( !is_host() ) {
+        add_msg( m_info, _( "Co-op chat is only available in a co-op session." ) );
+        return;
+    }
+    std::vector<int> ids;
+    uilist pick;
+    pick.text = _( "Which player?" );
+    for( auto &[id, p] : host::peers ) {
+        if( p.joined ) {
+            pick.addentry( static_cast<int>( ids.size() ), true, MENU_AUTOASSIGN, p.name );
+            ids.push_back( id );
+        }
+    }
+    if( ids.empty() ) {
+        add_msg( m_info, _( "Co-op: nobody is connected." ) );
+        return;
+    }
+    int peer_id = ids.front();
+    if( ids.size() > 1 ) {
+        pick.query();
+        if( pick.ret < 0 || pick.ret >= static_cast<int>( ids.size() ) ) {
+            return;
+        }
+        peer_id = ids[pick.ret];
+    }
+    host::peer_t *p = host::find_peer( peer_id );
+    if( p == nullptr ) {
+        return;
+    }
+    npc *proxy = host::proxy_of( *p );
+    const bool busy = p->auto_wait_turns > 0 || ( proxy != nullptr && proxy->activity &&
+                      *proxy->activity );
+    uilist menu;
+    menu.text = p->name;
+    menu.addentry( 0, busy, 's', _( "Stop their waiting or activity" ) );
+    menu.addentry( 1, true, 'd', p->dont_wait ? _( "Wait for their turns again" ) :
+                   _( "Don't wait for them (until they act)" ) );
+    menu.addentry( 2, true, 'c', _( "Chat" ) );
+    menu.addentry( 3, true, 'k', _( "Disconnect them" ) );
+    menu.query();
+    switch( menu.ret ) {
+        case 0:
+            p->auto_wait_turns = 0;
+            if( proxy != nullptr && proxy->activity && *proxy->activity ) {
+                proxy->cancel_activity();
+            }
+            host::send_to_player( *p, m_warning, _( "The host interrupted what you were doing." ) );
+            break;
+        case 1:
+            p->dont_wait = !p->dont_wait;
+            if( p->dont_wait ) {
+                host::send_to_player( *p, m_warning,
+                                      _( "The host stopped waiting for you.  Act whenever you are ready." ) );
+            }
+            break;
+        case 2:
+            open_chat();
+            break;
+        case 3:
+            host::disconnect_peer( *p, _( "The host disconnected you." ) );
+            break;
+        default:
+            break;
+    }
+}
+
 bool remote_prompts_active()
 {
     return is_host() && host::prompt_peer >= 0;
@@ -2092,27 +2313,22 @@ void remote_message( const std::string &text )
     }
 }
 
-int remote_choice( const std::string &text, const std::vector<std::string> &options,
-                   const std::vector<bool> &enabled, bool allow_cancel )
+namespace
+{
+// Sends a question ("kind" plus its fields) to the player whose action is
+// running and waits for the answer.  The rest of the game waits with us, as
+// it would for a question on our own screen.  nullopt: the player left.
+std::optional<std::string> ask_remote( const std::string &kind, const std::string &fields )
 {
     const int peer_id = host::prompt_peer;
     host::peer_t *p = host::find_peer( peer_id );
-    if( p == nullptr || options.empty() ) {
-        return -1;
+    if( p == nullptr ) {
+        return std::nullopt;
     }
     const std::string name = p->name;
     const int id = host::next_question_id++;
-    std::string opts;
-    std::string en;
-    for( size_t i = 0; i < options.size(); ++i ) {
-        opts += ( i ? "," : "" ) + json_quote( remove_color_tags( options[i] ) );
-        en += ( i ? "," : "" ) + std::string( i < enabled.size() && !enabled[i] ? "false" : "true" );
-    }
-    host::send( peer_id, string_format( "{\"t\":\"ask\",\"id\":%d,\"text\":%s,\"opts\":[%s],\"en\":[%s],"
-                                        "\"cancel\":%s}", id, json_quote( remove_color_tags( text ) ), opts, en,
-                                        allow_cancel ? "true" : "false" ) );
-    // Wait for the answer; the rest of the game waits with us, as it would
-    // for a question on our own screen.
+    host::send( peer_id, string_format( "{\"t\":\"ask\",\"id\":%d,\"kind\":%s%s}", id,
+                                        json_quote( kind ), fields ) );
     static_popup notice;
     notice.on_top( true );
     while( true ) {
@@ -2121,13 +2337,13 @@ int remote_choice( const std::string &text, const std::vector<std::string> &opti
         pump();
         const auto it = host::answers.find( id );
         if( it != host::answers.end() ) {
-            const int answer = it->second;
+            std::string answer = std::move( it->second );
             host::answers.erase( it );
-            return answer >= 0 && answer < static_cast<int>( options.size() ) ? answer : -1;
+            return answer;
         }
         p = host::find_peer( peer_id );
         if( p == nullptr || !p->joined ) {
-            return -1;
+            return std::nullopt;
         }
         notice.message( _( "Waiting for %s to answer a question…" ), name );
         ui_manager::redraw();
@@ -2135,6 +2351,123 @@ int remote_choice( const std::string &text, const std::vector<std::string> &opti
         inp_mngr.pump_events();
         std::this_thread::sleep_for( std::chrono::milliseconds( 20 ) );
     }
+}
+} // namespace
+
+int remote_choice( const std::string &text, const std::vector<std::string> &options,
+                   const std::vector<bool> &enabled, bool allow_cancel )
+{
+    if( options.empty() ) {
+        return -1;
+    }
+    std::string opts;
+    std::string en;
+    for( size_t i = 0; i < options.size(); ++i ) {
+        opts += ( i ? "," : "" ) + json_quote( remove_color_tags( options[i] ) );
+        en += ( i ? "," : "" ) + std::string( i < enabled.size() && !enabled[i] ? "false" : "true" );
+    }
+    const std::optional<std::string> answer = ask_remote( "choice",
+            string_format( ",\"text\":%s,\"opts\":[%s],\"en\":[%s],\"cancel\":%s",
+                           json_quote( remove_color_tags( text ) ), opts, en, allow_cancel ? "true" : "false" ) );
+    if( !answer ) {
+        return -1;
+    }
+    message m( *answer );
+    const int pick = m.object().get_int( "i", -1 );
+    return pick >= 0 && pick < static_cast<int>( options.size() ) ? pick : -1;
+}
+
+std::optional<tripoint_bub_ms> remote_actor_pos()
+{
+    if( !remote_prompts_active() ) {
+        return std::nullopt;
+    }
+    host::peer_t *p = host::find_peer( host::prompt_peer );
+    npc *proxy = p != nullptr ? host::proxy_of( *p ) : nullptr;
+    if( proxy == nullptr ) {
+        return std::nullopt;
+    }
+    return proxy->bub_pos();
+}
+
+std::optional<tripoint_rel_ms> remote_direction( const std::string &prompt, bool allow_vertical )
+{
+    const std::optional<std::string> answer = ask_remote( "dir",
+            string_format( ",\"text\":%s,\"vertical\":%s", json_quote( remove_color_tags( prompt ) ),
+                           allow_vertical ? "true" : "false" ) );
+    if( !answer ) {
+        return std::nullopt;
+    }
+    message m( *answer );
+    JsonObject jo = m.object();
+    if( !jo.get_bool( "ok", false ) ) {
+        return std::nullopt;
+    }
+    return tripoint_rel_ms( std::clamp( jo.get_int( "dx", 0 ), -1, 1 ),
+                            std::clamp( jo.get_int( "dy", 0 ), -1, 1 ),
+                            allow_vertical ? std::clamp( jo.get_int( "dz", 0 ), -1, 1 ) : 0 );
+}
+
+std::optional<tripoint_bub_ms> remote_tile( const std::string &prompt )
+{
+    const std::optional<std::string> answer = ask_remote( "tile",
+            string_format( ",\"text\":%s", json_quote( remove_color_tags( prompt ) ) ) );
+    if( !answer ) {
+        return std::nullopt;
+    }
+    message m( *answer );
+    JsonObject jo = m.object();
+    if( !jo.get_bool( "ok", false ) ) {
+        return std::nullopt;
+    }
+    const tripoint_bub_ms pos = host::read_bub( jo );
+    if( !get_map().inbounds( pos ) ) {
+        return std::nullopt;
+    }
+    return pos;
+}
+
+bool remote_pickup( const tripoint_bub_ms &pos )
+{
+    if( !remote_prompts_active() ) {
+        return false;
+    }
+    host::peer_t *p = host::find_peer( host::prompt_peer );
+    npc *proxy = p != nullptr ? host::proxy_of( *p ) : nullptr;
+    if( proxy == nullptr ) {
+        return true;
+    }
+    const tripoint_abs_ms abs = bub_to_abs( pos );
+    const std::optional<std::string> answer = ask_remote( "pickup",
+            string_format( ",\"x\":%d,\"y\":%d,\"z\":%d", abs.x(), abs.y(), abs.z() ) );
+    if( !answer ) {
+        return true;
+    }
+    message m( *answer );
+    JsonObject jo = m.object();
+    const host::action_result res = host::do_pickup( *proxy, pos, jo.get_array( "items" ) );
+    if( !res.ok && !res.msg.empty() ) {
+        proxy->add_msg_if_player( m_info, res.msg );
+    }
+    return true;
+}
+
+std::optional<std::string> remote_text( const std::string &title, const std::string &description,
+                                        const std::string &initial, bool only_digits, int max_length )
+{
+    const std::optional<std::string> answer = ask_remote( "text",
+            string_format( ",\"title\":%s,\"desc\":%s,\"init\":%s,\"digits\":%s,\"max\":%d",
+                           json_quote( remove_color_tags( title ) ), json_quote( remove_color_tags( description ) ),
+                           json_quote( initial ), only_digits ? "true" : "false", max_length ) );
+    if( !answer ) {
+        return std::nullopt;
+    }
+    message m( *answer );
+    JsonObject jo = m.object();
+    if( !jo.get_bool( "ok", false ) ) {
+        return std::nullopt;
+    }
+    return jo.get_string( "s", "" );
 }
 
 bool host_blocks_action( action_id act )

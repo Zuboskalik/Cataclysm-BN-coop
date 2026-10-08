@@ -20,6 +20,7 @@
 #include "map/map.h"
 #include "map/map_selector.h"
 #include "options.h"
+#include "mp_session.h"
 #include "output.h"
 #include "player.h"
 #include "point.h"
@@ -2166,6 +2167,24 @@ std::vector<char> inventory_selector::all_bound_keys() const
 
 item *inventory_pick_selector::execute()
 {
+    // Co-op: picking an item during a remote player's action is theirs to do.
+    if( cata_mp::remote_prompts_active() ) {
+        std::vector<item *> items;
+        std::vector<std::string> names;
+        for( inventory_column *col : get_all_columns() ) {
+            for( inventory_entry *entry : col->get_all_entries() ) {
+                if( entry != nullptr && entry->is_item() && entry->is_selectable() ) {
+                    items.push_back( entry->any_item() );
+                    names.push_back( entry->any_item()->display_name() );
+                }
+            }
+        }
+        if( items.empty() ) {
+            return nullptr;
+        }
+        const int pick = cata_mp::remote_choice( get_title(), names, {}, true );
+        return pick >= 0 ? items[pick] : nullptr;
+    }
     shared_ptr_fast<ui_adaptor> ui = create_or_get_ui_adaptor();
     while( true ) {
         ui_manager::redraw();
