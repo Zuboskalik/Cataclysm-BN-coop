@@ -51,6 +51,7 @@
 #include "options.h"
 #include "output.h"
 #include "overmap/overmapbuffer.h"
+#include "pickup.h"
 #include "pickup_token.h"
 #include "player_activity.h"
 #include "popup.h"
@@ -664,6 +665,10 @@ bool choose_wait_duration( int &turns )
 
 // Opens the pickup menu for a tile and returns the chosen items in the
 // host's [[index, count, type, ordinal], ...] form ("" if nothing chosen).
+// Filled by client_capture_pickup() while choose_pickup runs the pickup UI.
+bool capturing_pickup = false;
+std::optional<std::vector<pickup::pick_drop_selection>> pickup_capture;
+
 std::string choose_pickup( const tripoint_bub_ms &pos )
 {
     avatar &u = get_avatar();
@@ -672,11 +677,19 @@ std::string choose_pickup( const tripoint_bub_ms &pos )
         add_msg( m_info, _( "There is nothing to pick up there." ) );
         return std::string();
     }
-    const std::vector<pickup::pick_drop_selection> picked = game_menus::inv::pickup_from_tile( u,
-            pos );
-    if( picked.empty() ) {
+    // The usual side panel of single player; when it is done, the game
+    // would start picking up, which hands the choice to us instead.
+    pickup_capture.reset();
+    capturing_pickup = true;
+    pickup::pick_up( pos, 0 );
+    capturing_pickup = false;
+    if( !pickup_capture || pickup_capture->empty() ) {
+        pickup_capture.reset();
         return std::string();
     }
+    const std::vector<pickup::pick_drop_selection> picked = std::move( *pickup_capture );
+    pickup_capture.reset();
+    ( void )u;
     std::vector<item *> ground;
     for( item *it : here.i_at( pos ) ) {
         ground.push_back( it );
@@ -2104,6 +2117,15 @@ bool input_should_return()
 
 namespace cata_mp
 {
+bool client_capture_pickup( std::vector<pickup::pick_drop_selection> &targets )
+{
+    if( !is_client() || !client::capturing_pickup ) {
+        return false;
+    }
+    client::pickup_capture = std::move( targets );
+    return true;
+}
+
 bool client_request_construct( const std::string &id, const tripoint_bub_ms &pnt )
 {
     if( !is_client() ) {

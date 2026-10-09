@@ -27,6 +27,10 @@ class main_menu;
 class monster;
 class npc;
 class player;
+namespace pickup
+{
+struct pick_drop_selection;
+} // namespace pickup
 struct game_message_params;
 
 namespace cata_mp
@@ -138,6 +142,9 @@ std::optional<std::string> remote_text( const std::string &title, const std::str
 
 // Seed for picking the monster's sprite variant; the same on host and client.
 uintptr_t monster_sprite_seed( const monster &mon );
+// Client: the pickup UI chose these items; they go to the host instead of
+// being picked up locally.  Returns false outside a co-op pickup.
+bool client_capture_pickup( std::vector<pickup::pick_drop_selection> &targets );
 // Client: asks the host to build `id` at `pnt`.  Returns false outside co-op
 // (the caller then builds locally as usual).
 bool client_request_construct( const std::string &id, const tripoint_bub_ms &pnt );
