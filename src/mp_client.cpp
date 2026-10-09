@@ -21,6 +21,9 @@
 #include "character.h"
 #include "debug.h"
 #include "game.h"
+#include "cata_utility.h"
+#include "path_info.h"
+#include "filesystem.h"
 #include "game_constants.h"
 #include "construction.h"
 #include "crafting_gui.h"
@@ -398,7 +401,13 @@ void recenter_map()
         return;
     }
     if( std::abs( delta.x() ) > 2 || std::abs( delta.y() ) > 2 ) {
+        // A long jump (e.g. pulled along to the host) reloads the whole map,
+        // which drops creatures our copies still refer to.  Take them off
+        // first and have the host send everything again.
+        remove_all_monsters();
+        remove_all_npcs();
         g->load_map( want.xy() );
+        net::client_send( "{\"t\":\"resync\"}" );
     } else {
         g->update_map( u );
     }
@@ -549,6 +558,12 @@ void apply_state( message &m )
     if( jo.has_array( "npc_keys" ) && jo.has_member( "npc" ) ) {
         std::vector<int> keys;
         jo.read( "npc_keys", keys );
+        // Take the old copies away before reading the new ones: two live
+        // characters with the same id confuse the game's references (and
+        // two that traded places would land on each other).
+        for( const int key : keys ) {
+            remove_npc( key );
+        }
         std::vector<std::pair<int, shared_ptr_fast<npc>>> incoming;
         JsonIn &ji = *jo.get_raw( "npc" );
         ji.start_array();
@@ -558,11 +573,6 @@ void apply_state( message &m )
             if( incoming.size() < keys.size() ) {
                 incoming.emplace_back( keys[incoming.size()], guy );
             }
-        }
-        // As with monsters: take all updated characters off the map first, so
-        // two that traded places don't land on each other.
-        for( const auto &entry : incoming ) {
-            remove_npc( entry.first );
         }
         for( const auto &[key, guy] : incoming ) {
             guy->setID( character_id( key ), true );
@@ -948,7 +958,7 @@ void view_inventory()
         return;
     }
     if( !S.my_turn || S.awaiting_ack ) {
-        add_msg( m_info, _( "Not your turn yet: %s is acting." ), S.host_name );
+        // The waiting notice at the top already says whose turn it is.
         return;
     }
     switch( menu.ret ) {
@@ -1094,26 +1104,10 @@ void request_butcher()
                  ",\"items\":[" + list + "]" );
 }
 
-// Tab: hit the weakest adjacent hostile, which the host does as a move into it.
+// Tab: the host attacks the most dangerous hostile in reach, or waits a turn.
 void request_autoattack()
 {
-    avatar &u = get_avatar();
-    Creature *best = nullptr;
-    for( Creature *c : g->get_creatures_if( [&u]( const Creature & c ) {
-    return &c != &u && rl_dist( u.bub_pos(), c.bub_pos() ) == 1 &&
-           c.bub_pos().z() == u.bub_pos().z() && c.attitude_to( u ) == Attitude::A_HOSTILE &&
-           u.sees( c );
-    } ) ) {
-        if( best == nullptr || c->get_hp() < best->get_hp() ) {
-            best = c;
-        }
-    }
-    if( best == nullptr ) {
-        add_msg( m_info, _( "No hostile creature in reach." ) );
-        return;
-    }
-    const tripoint_rel_ms d = best->bub_pos() - u.bub_pos();
-    send_action( "move", string_format( ",\"dx\":%d,\"dy\":%d", d.x(), d.y() ) );
+    send_action( "autoattack" );
 }
 
 bool is_local_ui_action( action_id act )
@@ -1383,12 +1377,10 @@ void handle_line( const std::string &line )
         if( S.waiting ) {
             S.waiting = false;
         }
-        if( S.turn_wait_started > 0 && net::now_ms() - S.turn_wait_started > 3000 ) {
-            add_msg( m_info, _( "Your turn." ) );
-        }
         S.turn_wait_started = 0;
     } else if( t == "ack" ) {
         S.awaiting_ack = false;
+        get_avatar().movecounter = m.object().get_int( "spent", 0 );
         S.turn_wait_started = net::now_ms();
     } else if( t == "chat" ) {
         JsonObject jo = m.object();
@@ -1567,23 +1559,46 @@ bool join_game()
     // ---- character choice
     bool new_character = true;
     bool random_character = false;
+    // A character template saved earlier (character creation's "save template").
+    std::string template_name;
+    std::vector<std::string> templates;
+    for( std::string path : get_files_from_path( ".template", PATH_INFO::templatedir(), false, true ) ) {
+        path.erase( path.find( ".template" ), std::string::npos );
+        path.erase( 0, path.find_last_of( "\\/" ) + 1 );
+        templates.push_back( path );
+    }
+    std::sort( templates.begin(), templates.end(), localized_compare );
     {
         uilist menu;
         menu.title = string_format( _( "Joining %s's world \"%s\"" ), info.host, info.world );
         menu.addentry( 0, true, 'n', _( "Create a new character" ) );
         menu.addentry( 1000, true, 'r', _( "Create a random character" ) );
+        menu.addentry( 2000, !templates.empty(), 't', templates.empty() ?
+                       _( "Load from a template (no templates saved)" ) : _( "Load from a template" ) );
         for( size_t i = 0; i < info.players.size(); ++i ) {
             menu.addentry( static_cast<int>( i + 1 ), true, MENU_AUTOASSIGN,
                            string_format( _( "Continue as %s" ), info.players[i] ) );
         }
         menu.query();
-        if( menu.ret == 1000 ) {
+        if( menu.ret == 2000 ) {
+            uilist tmenu;
+            tmenu.text = _( "Which template?" );
+            for( size_t i = 0; i < templates.size(); ++i ) {
+                tmenu.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, templates[i] );
+            }
+            tmenu.query();
+            if( tmenu.ret < 0 || tmenu.ret >= static_cast<int>( templates.size() ) ) {
+                client::abort_join( std::string() );
+                return false;
+            }
+            template_name = templates[tmenu.ret];
+        } else if( menu.ret == 1000 ) {
             random_character = true;
         } else if( menu.ret < 0 ) {
             client::abort_join( std::string() );
             return false;
         }
-        if( menu.ret > 0 && menu.ret != 1000 ) {
+        if( menu.ret > 0 && menu.ret != 1000 && menu.ret != 2000 ) {
             new_character = false;
             S.my_name = info.players[menu.ret - 1];
         }
@@ -1597,7 +1612,9 @@ bool join_game()
     avatar &pc = get_avatar();
     pc = avatar();
     if( new_character ) {
-        if( !pc.create( random_character ? character_type::FULL_RANDOM : character_type::CUSTOM ) ) {
+        const character_type kind = !template_name.empty() ? character_type::TEMPLATE :
+                                    random_character ? character_type::FULL_RANDOM : character_type::CUSTOM;
+        if( !pc.create( kind, template_name ) ) {
             client::abort_join( std::string() );
             return false;
         }
@@ -1660,6 +1677,10 @@ bool client_do_turn()
         if( !S.end_reason.empty() ) {
             popup( "%s", S.end_reason );
         }
+        // Drop our copies of the host's creatures before the game tears the
+        // world down; held references would otherwise outlive it.
+        client::remove_all_monsters();
+        client::remove_all_npcs();
         g->uquit = QUIT_NOSAVED;
         return true;
     }
@@ -1677,6 +1698,16 @@ bool client_do_turn()
         return false;
     }
     avatar &u = get_avatar();
+    // While the host acts, show it at the top of the screen like the host's
+    // own "Waiting for…" notice, instead of filling the message log.
+    std::unique_ptr<static_popup> waiting_notice;
+    if( ( !S.my_turn || S.awaiting_ack ) && !S.waiting ) {
+        waiting_notice = std::make_unique<static_popup>();
+        waiting_notice->on_top( true );
+        const int secs = S.turn_wait_started > 0 ?
+                         static_cast<int>( ( net::now_ms() - S.turn_wait_started ) / 1000 ) : 0;
+        waiting_notice->message( _( "Waiting for %s to act… (%d s)" ), S.host_name, secs );
+    }
     // handle_action() expects a character that can act; the host owns the
     // real move budget.
     u.moves = 100;
@@ -1734,7 +1765,7 @@ bool client_intercept_action( action_id act,
         return true;
     }
     if( !S.my_turn || S.awaiting_ack ) {
-        add_msg( m_info, _( "Not your turn yet: %s is acting." ), S.host_name );
+        // The waiting notice at the top already says whose turn it is.
         return true;
     }
 
@@ -1828,23 +1859,25 @@ bool client_intercept_action( action_id act,
                 return true;
             }
             map &here = get_map();
-            // Another character there: the host or an NPC.
+            // Another character there: the host or an NPC.  Same options
+            // as the host has for us: swap, examine wounds, attack.
             if( const npc *who = g->critter_at<npc>( *p ) ) {
-                const bool is_host = who->getID().get_value() == client::S.host_id;
+                const bool adjacent = rl_dist( u.bub_pos(), *p ) == 1;
                 uilist menu;
                 menu.text = string_format( _( "What to do with %s?" ), who->get_name() );
-                menu.addentry( 0, rl_dist( u.bub_pos(), *p ) == 1 && !who->is_enemy(), 's',
-                               _( "Swap positions" ) );
-                menu.addentry( 1, is_host, 'c', _( "Chat with the host" ) );
-                menu.addentry( 2, true, 'l', _( "Look at them" ) );
+                menu.addentry( 0, adjacent && !who->is_enemy(), 's', _( "Swap positions" ) );
+                menu.addentry( 2, true, 'w', _( "Examine wounds" ) );
+                menu.addentry( 3, adjacent, 'a', _( "Attack" ) );
                 menu.query();
+                const tripoint_rel_ms d = *p - u.bub_pos();
                 if( menu.ret == 0 ) {
-                    const tripoint_rel_ms d = *p - u.bub_pos();
                     client::send_action( "move", string_format( ",\"dx\":%d,\"dy\":%d", d.x(), d.y() ) );
-                } else if( menu.ret == 1 ) {
-                    open_chat();
                 } else if( menu.ret == 2 ) {
-                    g->look_around( LA_MODE_DEFAULT );
+                    const bool precise = u.get_skill_level( skill_id( "firstaid" ) ) * 4 + u.per_cur >= 20;
+                    who->body_window( _( "Limbs of: " ) + who->disp_name(), true, precise, 0, 0, 0, 0.0f, 0.0f,
+                                      0.0f, 0.0f, 0.0f );
+                } else if( menu.ret == 3 && query_yn( _( "Really attack %s?" ), who->get_name() ) ) {
+                    client::send_action( "attack", client::pos_fields( *p ) );
                 }
                 return true;
             }
@@ -1912,6 +1945,25 @@ bool client_intercept_action( action_id act,
         case ACTION_AUTOATTACK:
             client::request_autoattack();
             return true;
+        case ACTION_CHAT: {
+            // Only shouting for now; talking to NPCs is the host's.
+            uilist menu;
+            menu.text = _( "What do you want to do?" );
+            menu.addentry( 0, true, 'a', _( "Yell" ) );
+            menu.addentry( 1, true, 'b', _( "Yell a sentence" ) );
+            menu.query();
+            if( menu.ret == 0 ) {
+                client::send_action( "shout" );
+            } else if( menu.ret == 1 ) {
+                string_input_popup popup;
+                popup.title( _( "Yell a sentence" ) ).width( 64 ).max_length( 128 )
+                .description( _( "Enter a sentence to yell" ) ).query();
+                if( !popup.canceled() && !popup.text().empty() ) {
+                    client::send_action( "shout", ",\"text\":" + json_quote( popup.text() ) );
+                }
+            }
+            return true;
+        }
         case ACTION_USE:
             client::request_use( nullptr );
             return true;

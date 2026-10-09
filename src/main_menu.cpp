@@ -1108,6 +1108,7 @@ bool main_menu::coop_tab()
             uilist type_menu;
             type_menu.title = _( "Character for the host" );
             type_menu.addentry( 0, true, 'u', _( "Custom character" ) );
+            type_menu.addentry( 1, true, 't', _( "Load from a template" ) );
             type_menu.addentry( 2, true, 'r', _( "Random character" ) );
             type_menu.addentry( 3, true, 'd', _( "Play now (random character, default scenario)" ) );
             type_menu.addentry( 4, true, 'n', _( "Play now (random character and scenario)" ) );

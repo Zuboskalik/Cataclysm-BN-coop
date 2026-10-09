@@ -39,6 +39,7 @@
 #include "martialarts.h"
 #include "message_types.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "mission.h"
 #include "monster.h"
 #include "mtype.h"
@@ -430,6 +431,10 @@ void game::chat()
     int volume = u.get_shout_volume();
 
     const std::vector<npc *> available = get_npcs_if( [&]( const npc & guy ) {
+        // Co-op: another player's character is not someone to talk to.
+        if( cata_mp::is_proxy( guy ) ) {
+            return false;
+        }
         // TODO: Get rid of the z-level check when z-level vision gets "better"
         return u.bub_pos().z() == guy.bub_pos().z() && u.sees( guy.bub_pos() ) &&
                rl_dist( u.bub_pos(), guy.bub_pos() ) <= SEEX * 2;

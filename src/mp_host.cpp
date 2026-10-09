@@ -26,6 +26,9 @@
 #include "effect.h"
 #include "faction.h"
 #include "game.h"
+#include "overmap/overmap_ui.h"
+#include "character_display.h"
+#include "game_inventory.h"
 #include "game_constants.h"
 #include "construction.h"
 #include "gates.h"
@@ -117,6 +120,8 @@ struct peer_t {
     // The host chose not to wait for this player: their character idles
     // until they send an action.
     bool dont_wait = false;
+    // Turns in a row the character's activity did not use any moves.
+    int stalled_activity_turns = 0;
 
     // What this client already has, by content hash.
     std::map<tripoint_abs_sm, size_t> sm_sent;
@@ -884,6 +889,10 @@ action_result do_move( npc &guy, int dx, int dy )
     guy.move_to( dest, true );
     if( guy.get_moves() == moves_before && guy.bub_pos() != dest ) {
         return fail( _( "You can't move there." ) );
+    }
+    // Walking and running cost stamina, as they do for the player.
+    if( guy.bub_pos() == dest ) {
+        guy.burn_move_stamina( moves_before - guy.get_moves() );
     }
     return action_result{};
 }
@@ -1725,6 +1734,45 @@ action_result do_reach( npc &guy, const tripoint_bub_ms &target )
     return action_result{};
 }
 
+// Tab, like avatar_action::autoattack: hit the most dangerous hostile in
+// reach (melee or reach weapon), or wait a turn when there is none.
+action_result do_autoattack( npc &guy )
+{
+    const int reach = guy.is_armed() ? guy.primary_weapon().reach_range( guy ) : 1;
+    std::vector<Creature *> critters = ranged::targetable_creatures( guy, reach );
+    critters.erase( std::remove_if( critters.begin(), critters.end(), [&guy]( const Creature * c ) {
+        if( c == &guy || ( c->is_npc() && is_proxy( *c->as_npc() ) ) ) {
+            return true;
+        }
+        if( c->is_monster() ) {
+            return c->as_monster()->attitude_to( guy ) != Attitude::A_HOSTILE;
+        }
+        return !c->is_npc() || !c->as_npc()->is_enemy();
+    } ), critters.end() );
+    if( critters.empty() ) {
+        guy.add_msg_if_player( m_info, _( "No hostile creature in reach.  Waiting a turn." ) );
+        character_funcs::do_pause( guy );
+        return action_result{};
+    }
+    const auto rate = []( const Creature * c ) -> float {
+        if( c->is_monster() ) {
+            return c->as_monster()->type->difficulty;
+        }
+        return 0.0f;
+    };
+    Creature &best = **std::max_element( critters.begin(), critters.end(),
+    [&rate]( const Creature * l, const Creature * r ) {
+        return rate( l ) < rate( r );
+    } );
+    const tripoint_rel_ms diff = best.bub_pos() - guy.bub_pos();
+    if( std::abs( diff.x() ) <= 1 && std::abs( diff.y() ) <= 1 && diff.z() == 0 ) {
+        guy.melee_attack( best, true );
+    } else {
+        guy.reach_attack( best.bub_pos() );
+    }
+    return action_result{};
+}
+
 // "Jump" over an adjacent obstacle.
 action_result do_jump( npc &guy, const tripoint_bub_ms &pos )
 {
@@ -1915,6 +1963,37 @@ action_result execute( peer_t &p, npc &guy, message &m )
     if( a == "disassemble" ) {
         return do_disassemble( guy, jo );
     }
+    if( a == "push" || a == "attack" ) {
+        const tripoint_bub_ms pos = read_bub( jo );
+        Creature *target = g->critter_at( pos );
+        if( target == nullptr || target == &guy || rl_dist( guy.bub_pos(), pos ) != 1 ) {
+            return fail( _( "There's nobody there." ) );
+        }
+        if( a == "attack" ) {
+            guy.melee_attack( *target, true );
+            return action_result{};
+        }
+        npc *other = target->as_npc();
+        if( other == nullptr ) {
+            return fail( std::string() );
+        }
+        const tripoint_bub_ms oldpos = other->bub_pos();
+        other->move_away_from( guy.bub_pos(), true );
+        guy.mod_moves( -20 );
+        if( oldpos != other->bub_pos() ) {
+            guy.add_msg_if_player( _( "%s moves out of the way." ), other->get_name() );
+        } else {
+            guy.add_msg_if_player( m_warning, _( "%s has nowhere to go!" ), other->get_name() );
+        }
+        return action_result{};
+    }
+    if( a == "shout" ) {
+        guy.shout( jo.get_string( "text", "" ), false );
+        return action_result{};
+    }
+    if( a == "autoattack" ) {
+        return do_autoattack( guy );
+    }
     if( a == "jump" ) {
         return do_jump( guy, read_bub( jo ) );
     }
@@ -1940,8 +2019,15 @@ bool wait_for_action( int peer_id )
     const int64_t started = net::now_ms();
     int64_t last_turn_sent = started;
     std::unique_ptr<static_popup> notice;
-    input_context ctxt( "COOP_WAIT" );
-    ctxt.register_action( "COOP_WAIT_MENU" );
+    // The usual keys: F2 for options, and screens that take no time
+    // (inventory, look around, map...) while the other player thinks.
+    input_context ctxt( "DEFAULTMODE" );
+    ctxt.register_action( action_ident( ACTION_COOP_PLAYERS ) );
+    for( const action_id act : {
+             ACTION_INVENTORY, ACTION_LOOK, ACTION_MAP, ACTION_MESSAGES, ACTION_PL_INFO, ACTION_COOP_CHAT
+         } ) {
+        ctxt.register_action( action_ident( act ) );
+    }
     while( true ) {
         pump();
         peer_t *p = find_peer( peer_id );
@@ -1964,13 +2050,26 @@ bool wait_for_action( int peer_id )
         if( notice ) {
             const int secs = static_cast<int>( ( net::now_ms() - started ) / 1000 );
             notice->message( _( "Waiting for %s to act… (%d s)\n%s for options" ),
-                             p->name, secs, ctxt.get_desc( "COOP_WAIT_MENU" ) );
+                             p->name, secs, ctxt.get_desc( action_ident( ACTION_COOP_PLAYERS ) ) );
         }
         ui_manager::redraw();
         refresh_display();
         ctxt.set_timeout( 40 );
         const std::string action = ctxt.handle_input();
-        if( action == "COOP_WAIT_MENU" ) {
+        if( action == action_ident( ACTION_INVENTORY ) ) {
+            game_menus::inv::common( get_avatar() );
+        } else if( action == action_ident( ACTION_LOOK ) ) {
+            g->look_around();
+        } else if( action == action_ident( ACTION_MAP ) ) {
+            ui::omap::display();
+        } else if( action == action_ident( ACTION_MESSAGES ) ) {
+            Messages::display_messages();
+        } else if( action == action_ident( ACTION_PL_INFO ) ) {
+            character_display::disp_info( get_avatar() );
+        } else if( action == action_ident( ACTION_COOP_CHAT ) ) {
+            open_chat();
+        }
+        if( action == action_ident( ACTION_COOP_PLAYERS ) ) {
             uilist menu;
             menu.text = string_format( _( "%s has not acted yet." ), p->name );
             menu.addentry( 0, true, 'w', _( "Keep waiting" ) );
@@ -2106,6 +2205,12 @@ void handle_line( int peer, const std::string &line )
         }
         if( proxy != nullptr && proxy->activity && *proxy->activity ) {
             proxy->cancel_activity();
+            // Some activities don't end on cancel for an NPC; the player
+            // asked to stop, so stop.
+            if( proxy->activity && *proxy->activity ) {
+                proxy->activity = std::make_unique<player_activity>();
+            }
+            proxy->backlog.clear();
         }
     } else if( t == "need" ) {
         JsonObject jo = m.object();
@@ -2279,7 +2384,17 @@ bool host_proxy_turn( npc &guy )
             }
             guy.mission = mission;
             if( guy.get_moves() == before ) {
+                // An activity that makes no progress for the player's
+                // character would hold their turn forever: drop it.
+                if( ++p->stalled_activity_turns > 3 ) {
+                    guy.activity = std::make_unique<player_activity>();
+                    guy.backlog.clear();
+                    p->stalled_activity_turns = 0;
+                    continue;
+                }
                 guy.set_moves( 0 );
+            } else {
+                p->stalled_activity_turns = 0;
             }
             continue;
         }
@@ -2324,6 +2439,7 @@ bool host_proxy_turn( npc &guy )
         p->action.reset();
         p->turn_announced = false;
         int seq = 0;
+        const int moves_before_action = guy.get_moves();
         host::action_result result;
         try {
             JsonObject jo = m.object();
@@ -2338,8 +2454,9 @@ bool host_proxy_turn( npc &guy )
             host::send_to_player( *p, m_info, result.msg );
         }
         host::broadcast( host::sync_level::normal );
-        host::send( peer_id, string_format( "{\"t\":\"ack\",\"seq\":%d,\"ok\":%s}", seq,
-                                            result.ok ? "true" : "false" ) );
+        // Moves the action took: the sidebar's move counter, like the player's.
+        host::send( peer_id, string_format( "{\"t\":\"ack\",\"seq\":%d,\"ok\":%s,\"spent\":%d}", seq,
+                                            result.ok ? "true" : "false", std::max( 0, moves_before_action - guy.get_moves() ) ) );
     }
     return true;
 }
