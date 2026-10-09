@@ -51,6 +51,7 @@
 #include "options.h"
 #include "output.h"
 #include "overmap/overmapbuffer.h"
+#include "pickup.h"
 #include "pickup_token.h"
 #include "player_activity.h"
 #include "popup.h"
@@ -130,6 +131,8 @@ struct state_t {
     std::map<std::string, shared_ptr_fast<monster>> monsters;
     std::set<int> npc_ids;
     int host_id = 0;
+    // The character is busy with a long action on the host.
+    bool busy = false;
 };
 
 state_t S;
@@ -426,6 +429,9 @@ void apply_state( message &m )
             calendar::turn = turn;
         }
     }
+    if( jo.has_bool( "busy" ) ) {
+        S.busy = jo.get_bool( "busy" );
+    }
     // Weather is the host's, not rolled locally.
     if( jo.has_array( "weather" ) ) {
         JsonArray w = jo.get_array( "weather" );
@@ -659,6 +665,10 @@ bool choose_wait_duration( int &turns )
 
 // Opens the pickup menu for a tile and returns the chosen items in the
 // host's [[index, count, type, ordinal], ...] form ("" if nothing chosen).
+// Filled by client_capture_pickup() while choose_pickup runs the pickup UI.
+bool capturing_pickup = false;
+std::optional<std::vector<pickup::pick_drop_selection>> pickup_capture;
+
 std::string choose_pickup( const tripoint_bub_ms &pos )
 {
     avatar &u = get_avatar();
@@ -667,11 +677,19 @@ std::string choose_pickup( const tripoint_bub_ms &pos )
         add_msg( m_info, _( "There is nothing to pick up there." ) );
         return std::string();
     }
-    const std::vector<pickup::pick_drop_selection> picked = game_menus::inv::pickup_from_tile( u,
-            pos );
-    if( picked.empty() ) {
+    // The usual side panel of single player; when it is done, the game
+    // would start picking up, which hands the choice to us instead.
+    pickup_capture.reset();
+    capturing_pickup = true;
+    pickup::pick_up( pos, 0 );
+    capturing_pickup = false;
+    if( !pickup_capture || pickup_capture->empty() ) {
+        pickup_capture.reset();
         return std::string();
     }
+    const std::vector<pickup::pick_drop_selection> picked = std::move( *pickup_capture );
+    pickup_capture.reset();
+    ( void )u;
     std::vector<item *> ground;
     for( item *it : here.i_at( pos ) ) {
         ground.push_back( it );
@@ -1709,8 +1727,12 @@ bool client_do_turn()
         waiting_notice->message( _( "Waiting for %s to act… (%d s)" ), S.host_name, secs );
     }
     // handle_action() expects a character that can act; the host owns the
-    // real move budget.
+    // real move budget.  Activities run on the host only: drop any a local
+    // menu left behind.
     u.moves = 100;
+    if( u.activity && *u.activity ) {
+        u.activity = std::make_unique<player_activity>();
+    }
     mp_client_game_access::handle_action( *g );
     return false;
 }
@@ -1750,7 +1772,8 @@ bool client_intercept_action( action_id act,
 
     // Our character's long action (pulping, crafting...) runs on the host and
     // shows up here through the mirrored state.
-    const bool busy = u.activity && *u.activity;
+    // Only the host knows; menus opened here may leave a local activity.
+    const bool busy = S.busy;
     if( S.waiting || busy ) {
         if( act == ACTION_PAUSE || act == ACTION_WAIT ) {
             client::send( "{\"t\":\"stop_wait\"}" );
@@ -2094,6 +2117,15 @@ bool input_should_return()
 
 namespace cata_mp
 {
+bool client_capture_pickup( std::vector<pickup::pick_drop_selection> &targets )
+{
+    if( !is_client() || !client::capturing_pickup ) {
+        return false;
+    }
+    client::pickup_capture = std::move( targets );
+    return true;
+}
+
 bool client_request_construct( const std::string &id, const tripoint_bub_ms &pnt )
 {
     if( !is_client() ) {

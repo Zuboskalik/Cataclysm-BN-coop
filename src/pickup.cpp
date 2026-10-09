@@ -1221,6 +1221,11 @@ auto pick_up_from_items( const std::vector<item_stack::iterator> &here, const in
     }
 
     std::vector<pickup::pick_drop_selection> targets = pickup::optimize_pickup( locations, quantities );
+    // Co-op client: the host does the picking up.
+    if( cata_mp::client_capture_pickup( targets ) ) {
+        g->reenter_fullscreen();
+        return;
+    }
     g->u.assign_activity( std::make_unique<player_activity>( std::make_unique<pickup_activity_actor>
                           ( targets,
                             starting_pos ) ) );
