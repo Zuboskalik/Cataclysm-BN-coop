@@ -418,6 +418,7 @@ bool pump()
     }
     if( g_role == role::client ) {
         client::flush_placeholders();
+        client::update_waiting_notice();
     }
     return changed;
 }

@@ -133,6 +133,7 @@ std::string status_line();
 void leave_session( bool ask );
 // Asks the host for submaps that had to be stubbed out locally.
 void flush_placeholders();
+void update_waiting_notice();
 } // namespace client
 
 } // namespace cata_mp

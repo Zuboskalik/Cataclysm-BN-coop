@@ -1418,6 +1418,30 @@ void handle_line( const std::string &line )
     }
 }
 
+// While the host acts, a notice at the top of the screen (like the host's
+// own "Waiting for…") instead of lines in the message log.  Refreshed on every
+// network pump so it goes away as soon as it is our turn.
+std::unique_ptr<static_popup> waiting_notice;
+
+void update_waiting_notice()
+{
+    const bool host_acting = S.in_game && ( !S.my_turn || S.awaiting_ack ) && !S.waiting && !S.leaving;
+    if( !host_acting ) {
+        if( waiting_notice ) {
+            waiting_notice.reset();
+            g->invalidate_main_ui_adaptor();
+        }
+        return;
+    }
+    if( !waiting_notice ) {
+        waiting_notice = std::make_unique<static_popup>();
+        waiting_notice->on_top( true );
+    }
+    const int secs = S.turn_wait_started > 0 ?
+                     static_cast<int>( ( net::now_ms() - S.turn_wait_started ) / 1000 ) : 0;
+    waiting_notice->message( _( "Waiting for %s to act… (%d s)" ), S.host_name, secs );
+}
+
 void flush_placeholders()
 {
     std::vector<tripoint_abs_sm> pending;
@@ -1489,6 +1513,7 @@ void leave_session( bool ask )
     // Teardown after the game loop ended.
     net::client_disconnect();
     net::clear_events();
+    waiting_notice.reset();
     S = state_t();
     world_generator->set_active_world( nullptr );
     if( scratch_world_exists() ) {
@@ -1716,16 +1741,7 @@ bool client_do_turn()
         return false;
     }
     avatar &u = get_avatar();
-    // While the host acts, show it at the top of the screen like the host's
-    // own "Waiting for…" notice, instead of filling the message log.
-    std::unique_ptr<static_popup> waiting_notice;
-    if( ( !S.my_turn || S.awaiting_ack ) && !S.waiting ) {
-        waiting_notice = std::make_unique<static_popup>();
-        waiting_notice->on_top( true );
-        const int secs = S.turn_wait_started > 0 ?
-                         static_cast<int>( ( net::now_ms() - S.turn_wait_started ) / 1000 ) : 0;
-        waiting_notice->message( _( "Waiting for %s to act… (%d s)" ), S.host_name, secs );
-    }
+    client::update_waiting_notice();
     // handle_action() expects a character that can act; the host owns the
     // real move budget.  Activities run on the host only: drop any a local
     // menu left behind.
