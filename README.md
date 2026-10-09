@@ -18,7 +18,7 @@ Host and client must run the same build.
 
 ## Support
 
-[Boosty](https://boosty.to/zuboskalik/donate) or [donation](https://www.donationalerts.com/dashboard) — donations are just to support my work on the port,
+[Boosty](https://boosty.to/zuboskalik/donate) or [donation](https://www.donationalerts.com/r/zuboskalikjet) — donations are just to support my work on the port,
 not for the game itself. The game is free; all releases are free.
 
 ---
