@@ -8220,6 +8220,14 @@ bool game::npc_menu( npc &who, const bool &force )
     uilist amenu;
 
     amenu.text = string_format( _( "What to do with %s?" ), who.disp_name() );
+    // Co-op: with another player's character only swap, examine
+    // wounds and attack make sense.
+    const bool coop_player = cata_mp::is_proxy( who );
+    if( coop_player ) {
+        amenu.addentry( swap_pos, !who.is_mounted() && !u.is_mounted(), 's', _( "Swap positions" ) );
+        amenu.addentry( examine_wounds, true, 'w', _( "Examine wounds" ) );
+        amenu.addentry( attack, true, 'a', _( "Attack" ) );
+    } else {
     amenu.addentry( talk, true, 't', _( "Talk" ) );
     amenu.addentry( swap_pos, obeys && !who.is_mounted() &&
                     !u.is_mounted(), 's', _( "Swap positions" ) );
@@ -8235,6 +8243,7 @@ bool game::npc_menu( npc &who, const bool &force )
     if( who.is_player_ally() ) {
         amenu.addentry( control, who.is_player_ally() && !cata_mp::is_proxy( who ), 'c', _( "Control" ) );
         amenu.addentry( tutorial, true, 'T', _( "NPC Ally Tutorial" ) );
+    }
     }
 
     amenu.query();
@@ -8958,6 +8967,11 @@ void game::peek()
 
 void game::peek( const tripoint_rel_ms &p )
 {
+    // Co-op: peeking during a remote player's action is a view on their screen.
+    if( cata_mp::remote_prompts_active() ) {
+        cata_mp::remote_peek( p );
+        return;
+    }
     const auto prev = u.abs_pos();
     const auto peek_pos = prev + p;
     auto restore_player_pos = [&]() {

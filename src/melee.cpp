@@ -35,6 +35,7 @@
 #include "map_iterator.h"
 #include "martialarts.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "monattack.h"
 #include "monster.h"
 #include "mtype.h"
@@ -3441,7 +3442,8 @@ std::string melee_message( const ma_technique &tec, Character &p, const dealt_da
 
     if( tec.id != tec_none ) {
         std::string message;
-        if( p.is_npc() ) {
+        // Co-op: a player's character (an NPC on the host) gets the player's text.
+        if( p.is_npc() && !cata_mp::is_proxy( p ) ) {
             message = _( tec.npc_message );
         } else {
             message = _( tec.avatar_message );
@@ -3456,7 +3458,7 @@ std::string melee_message( const ma_technique &tec, Character &p, const dealt_da
         dominant_type = cut_dam >= stab_dam ? DT_CUT : DT_STAB;
     }
 
-    const bool npc = p.is_npc();
+    const bool npc = p.is_npc() && !cata_mp::is_proxy( p );
 
     // Cutting has more messages and so needs different handling
     const bool cutting = dominant_type == DT_CUT;
@@ -3487,13 +3489,15 @@ std::string melee_message( const ma_technique &tec, Character &p, const dealt_da
 void player_hit_message( Character *attacker, const std::string &message,
                          Creature &t, int dam, bool crit )
 {
+    // Co-op: a player's character (an NPC on the host) is told like the player.
+    const bool npc_attacker = attacker->is_npc() && !cata_mp::is_proxy( *attacker );
     std::string msg;
     game_message_type msgtype = m_good;
     std::string sSCTmod;
     game_message_type gmtSCTcolor = m_good;
 
     if( dam <= 0 ) {
-        if( attacker->is_npc() ) {
+        if( npc_attacker ) {
             //~ NPC hits something but does no damage
             msg = string_format( _( "%s but does no damage." ), message );
         } else {
@@ -3503,7 +3507,7 @@ void player_hit_message( Character *attacker, const std::string &message,
         msgtype = m_neutral;
     } else if(
         crit ) { //Player won't see exact numbers of damage dealt by NPC unless player has DEBUG_NIGHTVISION trait
-        if( attacker->is_npc() && !g->u.has_trait( trait_DEBUG_NIGHTVISION ) ) {
+        if( npc_attacker && !g->u.has_trait( trait_DEBUG_NIGHTVISION ) ) {
             //~ NPC hits something (critical)
             msg = string_format( _( "%s. Critical!" ), message );
         } else {
@@ -3513,7 +3517,7 @@ void player_hit_message( Character *attacker, const std::string &message,
         sSCTmod = _( "Critical!" );
         gmtSCTcolor = m_critical;
     } else {
-        if( attacker->is_npc() && !g->u.has_trait( trait_DEBUG_NIGHTVISION ) ) {
+        if( npc_attacker && !g->u.has_trait( trait_DEBUG_NIGHTVISION ) ) {
             //~ NPC hits something
             msg = string_format( _( "%s." ), message );
         } else {
@@ -3543,6 +3547,14 @@ void player_hit_message( Character *attacker, const std::string &message,
         }
     }
 
+    if( !npc_attacker && attacker->is_npc() ) {
+        // The remote player gets their own line; the host a short one.
+        attacker->add_msg_if_player( msgtype, msg, t.disp_name() );
+        if( g->u.sees( *attacker ) ) {
+            add_msg( _( "%1$s hits %2$s." ), attacker->disp_name(), t.disp_name() );
+        }
+        return;
+    }
     // same message is used for player and npc,
     // just using this for the <npcname> substitution.
     attacker->add_msg_player_or_npc( msgtype, msg, msg, t.disp_name() );

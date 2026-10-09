@@ -1441,6 +1441,10 @@ void npc::invalidate_range_cache()
 
 void npc::form_opinion( const Character &u )
 {
+    // Co-op: a player's character has no NPC opinion to form.
+    if( cata_mp::is_proxy( *this ) ) {
+        return;
+    }
     // FEAR
     if( u.primary_weapon().is_gun() ) {
         // TODO: Make bows not guns
@@ -1569,7 +1573,7 @@ void npc::form_opinion( const Character &u )
 
 void npc::mutiny()
 {
-    if( !my_fac || !is_player_ally() ) {
+    if( !my_fac || !is_player_ally() || cata_mp::is_proxy( *this ) ) {
         return;
     }
     const bool seen = g->u.sees( bub_pos() );
@@ -1651,7 +1655,7 @@ int npc::hostile_anger_level() const
 
 void npc::make_angry()
 {
-    if( is_enemy() ) {
+    if( is_enemy() || cata_mp::is_proxy( *this ) ) {
         return; // We're already angry!
     }
 
@@ -1676,6 +1680,10 @@ void npc::on_attacked( const Creature &attacker )
 {
     if( is_hallucination() ) {
         die( nullptr );
+    }
+    // Co-op: a player's character doesn't turn on the host over a stray hit.
+    if( cata_mp::is_proxy( *this ) ) {
+        return;
     }
     if( attacker.is_player() && !is_enemy() ) {
         const auto attacked_faction = get_monster_faction();
