@@ -430,6 +430,9 @@ std::string build_state( peer_t &p, sync_level level, broadcast_cache &cache )
             p.you_sent = h;
             out += ",\"you\":" + you + ",\"driving\":" + ( proxy->controlling_vehicle ? "true" : "false" );
         }
+        // Whether the character is busy with something (sent every time:
+        // the client relies on it rather than on its own copy).
+        out += string_format( ",\"busy\":%s", proxy->activity && *proxy->activity ? "true" : "false" );
     }
 
     // ---- monsters

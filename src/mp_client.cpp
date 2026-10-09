@@ -130,6 +130,8 @@ struct state_t {
     std::map<std::string, shared_ptr_fast<monster>> monsters;
     std::set<int> npc_ids;
     int host_id = 0;
+    // The character is busy with a long action on the host.
+    bool busy = false;
 };
 
 state_t S;
@@ -425,6 +427,9 @@ void apply_state( message &m )
         if( turn != calendar::turn ) {
             calendar::turn = turn;
         }
+    }
+    if( jo.has_bool( "busy" ) ) {
+        S.busy = jo.get_bool( "busy" );
     }
     // Weather is the host's, not rolled locally.
     if( jo.has_array( "weather" ) ) {
@@ -1709,8 +1714,12 @@ bool client_do_turn()
         waiting_notice->message( _( "Waiting for %s to act… (%d s)" ), S.host_name, secs );
     }
     // handle_action() expects a character that can act; the host owns the
-    // real move budget.
+    // real move budget.  Activities run on the host only: drop any a local
+    // menu left behind.
     u.moves = 100;
+    if( u.activity && *u.activity ) {
+        u.activity = std::make_unique<player_activity>();
+    }
     mp_client_game_access::handle_action( *g );
     return false;
 }
@@ -1750,7 +1759,8 @@ bool client_intercept_action( action_id act,
 
     // Our character's long action (pulping, crafting...) runs on the host and
     // shows up here through the mirrored state.
-    const bool busy = u.activity && *u.activity;
+    // Only the host knows; menus opened here may leave a local activity.
+    const bool busy = S.busy;
     if( S.waiting || busy ) {
         if( act == ACTION_PAUSE || act == ACTION_WAIT ) {
             client::send( "{\"t\":\"stop_wait\"}" );
