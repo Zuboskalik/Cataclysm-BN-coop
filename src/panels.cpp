@@ -2422,7 +2422,7 @@ static bool spell_panel()
 
 static bool veh_panel()
 {
-    return get_avatar().in_vehicle;
+    return get_avatar().in_vehicle || g->remoteveh();
 }
 bool default_render()
 {

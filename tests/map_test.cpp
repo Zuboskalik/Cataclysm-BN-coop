@@ -143,6 +143,26 @@ auto total_field_intensity_in_radius(
 
 } // namespace
 
+TEST_CASE("mapgen_water_fixtures_are_already_plumbed", "[mapgen][fluid_grid][regression]") {
+    clear_all_state();
+    const auto cleanup = on_out_of_scope([] { clear_all_state(); });
+    auto& buffer = MAPBUFFER_REGISTRY.get(mapbuffer_registry::primary_dimension_id());
+    auto tm = mapgen_constructor(buffer);
+    tm.reset_scratch_omt(
+        tripoint_abs_omt(11, 13, 0), ter_id("t_floor"), furn_id("f_null"), trap_id("tr_null"));
+    const auto target = point_omt_ms(SEEX, SEEY);
+    const auto furniture = furn_id(GENERATE("f_sink", "f_shower", "f_bathtub"));
+    REQUIRE(tm.furn_set(target, furniture));
+    auto* vars = tm.furn_vars(target);
+    REQUIRE(vars != nullptr);
+    CHECK(vars->get("fluid_grid_assigned_liquid", "") == "water_clean");
+
+    // Reapplying the same furniture must preserve an explicitly changed assignment.
+    vars->set("fluid_grid_assigned_liquid", "water");
+    CHECK_FALSE(tm.furn_set(target, furniture));
+    CHECK(vars->get("fluid_grid_assigned_liquid", "") == "water");
+}
+
 TEST_CASE("mapgen_items_stay_on_sealed_container_tiles", "[mapgen][item][regression]") {
     clear_all_state();
     auto& buffer = MAPBUFFER_REGISTRY.get(mapbuffer_registry::primary_dimension_id());
@@ -1385,6 +1405,37 @@ TEST_CASE("monster_tracker_uses_absolute_positions") {
     CHECK(mon->abs_pos() == moved_abs);
     CHECK(g->critter_at<monster>(moved_bub) == mon);
     CHECK(g->critter_at<monster>(player_shifted_monster_pos) == nullptr);
+}
+
+TEST_CASE("binding_dimensions_rebuilds_vehicle_caches", "[map][vehicle][dimension]") {
+    clear_all_state();
+    auto& here = get_map();
+    const auto original_dim = here.get_bound_dimension();
+    const auto other_dim = dimension_id("vehicle_cache_rebinding");
+    const auto cleanup = on_out_of_scope([&]() {
+        here.bind_dimension(original_dim);
+        MAPBUFFER_REGISTRY.unload_dimension(other_dim);
+        clear_vehicles();
+    });
+    const auto pos = tripoint_bub_ms(60, 60, 0);
+    here.ter_set(pos, ter_id("t_floor"));
+    auto* const veh = here.add_vehicle(vproto_id("none"), pos, 0_degrees, 0, 0);
+    REQUIRE(veh != nullptr);
+    REQUIRE(veh->install_part(tripoint_mnt_veh::zero(), vpart_id("frame_vertical")) >= 0);
+    here.add_vehicle_to_cache(veh);
+    REQUIRE(here.get_cache_ref(0).vehicle_list.contains(veh));
+    REQUIRE_FALSE(here.get_vehicles().empty());
+
+    here.bind_dimension(other_dim);
+    CHECK(here.get_cache_ref(0).vehicle_list.empty());
+    CHECK(here.get_cache_ref(0).veh_cached_parts.empty());
+    CHECK(here.get_vehicles().empty());
+
+    here.bind_dimension(original_dim);
+    CHECK(here.get_cache_ref(0).vehicle_list.contains(veh));
+    CHECK_FALSE(here.get_vehicles().empty());
+    here.bind_dimension(original_dim);
+    CHECK(here.get_cache_ref(0).vehicle_list.contains(veh));
 }
 
 TEST_CASE("placed_monsters_inherit_bound_dimension") {

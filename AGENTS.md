@@ -14,6 +14,7 @@ Before writing **ANY** code, verify:
 
 **Prefer `std::ranges`/`std::views`/`std::ranges::to`/cata_algo.h for collection work. Avoid manual iterator increment loops unless required by mutation semantics.**
 
+- Ranges preference means composable iterator/view pipelines. Do not replace a clear counted/nested loop with `views::iota` + `ranges::for_each` just to avoid loop syntax; use a plain `for` when index access, early break, mutation, or nested traversal is clearer.
 - prefer function-local `using namespace std::views;` and use `transform`/`filter` unqualified.
 - prefer function-local `namespace ranges = std::ranges;` and use `ranges::*` without `std::`
 - prefer method/function references over lambdas whenever possible, e.g. `transform( &vpart_position::part_index )` instead of `transform( []( const auto &vp ) { return vp.part_index(); } )`.
@@ -149,5 +150,6 @@ rg -C2 -i 'speedway' lang/po/ko.po | rg -v '^(#:|--)' | head -n 20
 - **Review**: [LLM Guide](./.github/llm_review_guide.md).
 
 - When fixing a bug, preserve requested behavior and visible content unless the user explicitly asks to remove it; fix the underlying issue instead of suppressing the affected feature.
+- UI regression tests must follow the actual refresh path; do not manually prepare layout or paging after an action unless production does so, since that can hide stale display ordering.
 - When reviewing PRs that stop tracking generated or externally pulled files, verify ignore rules by running the generator/pull command or checking `git status --ignored`; do not assume removed tracked files are ignored.
 - When generated or externally pulled files are removed from tracking, verify all CI and release consumers still receive required files or directories.

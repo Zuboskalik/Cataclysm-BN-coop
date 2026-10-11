@@ -88,6 +88,7 @@ static const bionic_id bio_memory( "bio_memory" );
 
 static const efftype_id effect_alarm_clock( "alarm_clock" );
 static const efftype_id effect_contacts( "contacts" );
+static const efftype_id effect_downed( "downed" );
 static const efftype_id effect_sleep( "sleep" );
 static const efftype_id effect_slept_through_alarm( "slept_through_alarm" );
 static const efftype_id effect_cold( "cold" );
@@ -1315,9 +1316,16 @@ void avatar::set_movement_mode( character_movemode new_mode )
             } else {
                 // Spend moves to stand up if crouched or prone, otherwise just stop running.
                 if( move_mode == CMM_PRONE ) {
-                    mod_moves( -300 );
-                    recoil = MAX_RECOIL;
-                    add_msg( _( "You get up from the ground." ) );
+                    if( has_effect( effect_downed ) ) {
+                        // Spend a turn trying to get back up if the player tried to manually swap stances while downed.
+                        Character::try_remove_downed( *this );
+                        mod_moves( -100 );
+                        return;
+                    } else {
+                        mod_moves( -300 );
+                        recoil = MAX_RECOIL;
+                        add_msg( _( "You get up from the ground." ) );
+                    }
                 } else if( move_mode == CMM_CROUCH ) {
                     mod_moves( -100 );
                     recoil = MAX_RECOIL;
@@ -1342,9 +1350,16 @@ void avatar::set_movement_mode( character_movemode new_mode )
                 } else {
                     // Spend moves to stand up if crouched or prone, otherwise just stop running.
                     if( move_mode == CMM_PRONE ) {
-                        mod_moves( -300 );
-                        recoil = MAX_RECOIL;
-                        add_msg( _( "You get up from the ground and start running." ) );
+                        if( has_effect( effect_downed ) ) {
+                            // Spend a turn trying to get back up if the player tried to manually swap stances while downed.
+                            Character::try_remove_downed( *this );
+                            mod_moves( -100 );
+                            return;
+                        } else {
+                            mod_moves( -300 );
+                            recoil = MAX_RECOIL;
+                            add_msg( _( "You get up from the ground and start running." ) );
+                        }
                     } else if( move_mode == CMM_CROUCH ) {
                         mod_moves( -100 );
                         recoil = MAX_RECOIL;
@@ -1380,9 +1395,16 @@ void avatar::set_movement_mode( character_movemode new_mode )
                     mod_moves( -100 );
                     add_msg( _( "You start crouching." ) );
                 } else if( move_mode == CMM_PRONE ) {
-                    recoil = MAX_RECOIL;
-                    mod_moves( -200 );
-                    add_msg( _( "You rise from prone to a crouch." ) );
+                    if( has_effect( effect_downed ) ) {
+                        // Spend a turn trying to get back up if the player tried to manually swap stances while downed.
+                        Character::try_remove_downed( *this );
+                        mod_moves( -100 );
+                        return;
+                    } else {
+                        recoil = MAX_RECOIL;
+                        mod_moves( -200 );
+                        add_msg( _( "You rise from prone to a crouch." ) );
+                    }
                 }
             }
             break;

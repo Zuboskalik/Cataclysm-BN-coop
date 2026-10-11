@@ -7,6 +7,7 @@
 #include "catalua_luna.h"
 #include "catalua_luna_doc.h"
 #include "coordinates.h"
+#include "data_vars.h"
 #include "detached_ptr.h"
 #include "distribution_grid.h"
 #include "enum_conversions.h"
@@ -15,6 +16,7 @@
 #include "map/field.h"
 #include "map/map.h"
 #include "map_iterator.h"
+#include "map/mapbuffer.h"
 #include "mapgen/mapgen_constructor.h"
 #include "npc.h"
 #include "overmap/overmap.h"
@@ -358,6 +360,14 @@ void cata::detail::reg_map( sol::state &lua )
         []( const map &, const tripoint_abs_sm & pos ) -> tripoint_bub_sm {
             return abs_to_bub( pos );
         } ) );
+        DOC( "Returns the dimension id currently bound to this map. Empty string means the overworld." );
+        luna::set_fx( ut, "get_bound_dimension", []( const map & m ) -> std::string {
+            return m.get_bound_dimension().str();
+        } );
+        DOC( "Returns whether a local map position lies outside the current dimension bounds." );
+        luna::set_fx( ut, "is_out_of_bounds", []( const map & m, const tripoint_bub_ms & p ) -> bool {
+            return m.get_mapbuffer().is_outside_pocket_dimension_bounds( map_local_to_abs( m, p ) );
+        } );
 
         luna::set_fx( ut, "get_map_size_in_submaps", &map::getmapsize );
         DOC( "In map squares" );
@@ -547,6 +557,63 @@ void cata::detail::reg_map( sol::state &lua )
         luna::set_fx( ut, "get_furn_at",
                       sol::resolve<furn_id( const tripoint_bub_ms & )const>( &map::furn ) );
         luna::set_fx( ut, "set_furn_at", []( map & m, const tripoint_bub_ms & p, const furn_id & id ) { m.furn_set( p, id ); } );
+        DOC( "Returns a furniture variable at the position, or `default` (empty string if omitted) when it is not set." );
+        luna::set_fx( ut, "get_furn_var_at", []( const map & m, const tripoint_bub_ms & p,
+        const std::string & key, sol::optional<std::string> default_value ) -> std::string {
+            const auto *vars = m.furn_vars( p );
+            return vars ? vars->get( key, default_value.value_or( "" ) ) : default_value.value_or( "" );
+        } );
+        DOC( "Sets a furniture variable at the position. Returns false if the position is out of bounds." );
+        luna::set_fx( ut, "set_furn_var_at", []( map & m, const tripoint_bub_ms & p,
+        const std::string & key, const std::string & value ) -> bool {
+            auto *vars = m.furn_vars( p );
+            if( !vars ) { return false; }
+            vars->set( key, value );
+            return true;
+        } );
+        DOC( "Returns whether a furniture variable is set at the position." );
+        luna::set_fx( ut, "has_furn_var_at", []( const map & m, const tripoint_bub_ms & p,
+        const std::string & key ) -> bool {
+            const auto *vars = m.furn_vars( p );
+            return vars && vars->contains( key );
+        } );
+        DOC( "Removes a furniture variable at the position. Returns whether a variable was removed." );
+        luna::set_fx( ut, "erase_furn_var_at", []( map & m, const tripoint_bub_ms & p,
+        const std::string & key ) -> bool {
+            auto *vars = m.furn_vars( p );
+            if( !vars || !vars->contains( key ) ) { return false; }
+            vars->erase( key );
+            return true;
+        } );
+
+        DOC( "Returns a terrain variable at the position, or `default` (empty string if omitted) when it is not set." );
+        luna::set_fx( ut, "get_ter_var_at", []( const map & m, const tripoint_bub_ms & p,
+        const std::string & key, sol::optional<std::string> default_value ) -> std::string {
+            const auto *vars = m.ter_vars( p );
+            return vars ? vars->get( key, default_value.value_or( "" ) ) : default_value.value_or( "" );
+        } );
+        DOC( "Sets a terrain variable at the position. Returns false if the position is out of bounds." );
+        luna::set_fx( ut, "set_ter_var_at", []( map & m, const tripoint_bub_ms & p,
+        const std::string & key, const std::string & value ) -> bool {
+            auto *vars = m.ter_vars( p );
+            if( !vars ) { return false; }
+            vars->set( key, value );
+            return true;
+        } );
+        DOC( "Returns whether a terrain variable is set at the position." );
+        luna::set_fx( ut, "has_ter_var_at", []( const map & m, const tripoint_bub_ms & p,
+        const std::string & key ) -> bool {
+            const auto *vars = m.ter_vars( p );
+            return vars && vars->contains( key );
+        } );
+        DOC( "Removes a terrain variable at the position. Returns whether a variable was removed." );
+        luna::set_fx( ut, "erase_ter_var_at", []( map & m, const tripoint_bub_ms & p,
+        const std::string & key ) -> bool {
+            auto *vars = m.ter_vars( p );
+            if( !vars || !vars->contains( key ) ) { return false; }
+            vars->erase( key );
+            return true;
+        } );
 
         luna::set_fx( ut, "has_field_at",
                       []( const map & m, const tripoint_bub_ms & p, const field_type_id & fid ) -> bool { return !!m.field_at( p ).find_field( fid ); } );
@@ -714,6 +781,63 @@ void cata::detail::reg_map( sol::state &lua )
         []( const mapgen_constructor & m, const point_omt_ms & p ) { return m.furn( p ); } );
         luna::set_fx( ut, "set_furn_at",
         []( mapgen_constructor & m, const point_omt_ms & p, const furn_id & id ) { m.furn_set( p, id ); } );
+        DOC( "Returns a furniture variable at the position, or `default` (empty string if omitted) when it is not set." );
+        luna::set_fx( ut, "get_furn_var_at", []( const mapgen_constructor & m, const point_omt_ms & p,
+        const std::string & key, sol::optional<std::string> default_value ) -> std::string {
+            const auto *vars = m.furn_vars( p );
+            return vars ? vars->get( key, default_value.value_or( "" ) ) : default_value.value_or( "" );
+        } );
+        DOC( "Sets a furniture variable at the position. Returns false if the position is out of bounds." );
+        luna::set_fx( ut, "set_furn_var_at", []( mapgen_constructor & m, const point_omt_ms & p,
+        const std::string & key, const std::string & value ) -> bool {
+            auto *vars = m.furn_vars( p );
+            if( !vars ) { return false; }
+            vars->set( key, value );
+            return true;
+        } );
+        DOC( "Returns whether a furniture variable is set at the position." );
+        luna::set_fx( ut, "has_furn_var_at", []( const mapgen_constructor & m, const point_omt_ms & p,
+        const std::string & key ) -> bool {
+            const auto *vars = m.furn_vars( p );
+            return vars && vars->contains( key );
+        } );
+        DOC( "Removes a furniture variable at the position. Returns whether a variable was removed." );
+        luna::set_fx( ut, "erase_furn_var_at", []( mapgen_constructor & m, const point_omt_ms & p,
+        const std::string & key ) -> bool {
+            auto *vars = m.furn_vars( p );
+            if( !vars || !vars->contains( key ) ) { return false; }
+            vars->erase( key );
+            return true;
+        } );
+
+        DOC( "Returns a terrain variable at the position, or `default` (empty string if omitted) when it is not set." );
+        luna::set_fx( ut, "get_ter_var_at", []( const mapgen_constructor & m, const point_omt_ms & p,
+        const std::string & key, sol::optional<std::string> default_value ) -> std::string {
+            const auto *vars = m.ter_vars( p );
+            return vars ? vars->get( key, default_value.value_or( "" ) ) : default_value.value_or( "" );
+        } );
+        DOC( "Sets a terrain variable at the position. Returns false if the position is out of bounds." );
+        luna::set_fx( ut, "set_ter_var_at", []( mapgen_constructor & m, const point_omt_ms & p,
+        const std::string & key, const std::string & value ) -> bool {
+            auto *vars = m.ter_vars( p );
+            if( !vars ) { return false; }
+            vars->set( key, value );
+            return true;
+        } );
+        DOC( "Returns whether a terrain variable is set at the position." );
+        luna::set_fx( ut, "has_ter_var_at", []( const mapgen_constructor & m, const point_omt_ms & p,
+        const std::string & key ) -> bool {
+            const auto *vars = m.ter_vars( p );
+            return vars && vars->contains( key );
+        } );
+        DOC( "Removes a terrain variable at the position. Returns whether a variable was removed." );
+        luna::set_fx( ut, "erase_ter_var_at", []( mapgen_constructor & m, const point_omt_ms & p,
+        const std::string & key ) -> bool {
+            auto *vars = m.ter_vars( p );
+            if( !vars || !vars->contains( key ) ) { return false; }
+            vars->erase( key );
+            return true;
+        } );
         luna::set_fx( ut, "get_temperature",
         []( const mapgen_constructor & m, const point_omt_ms & p ) { return m.get_temperature( p ); } );
         luna::set_fx( ut, "set_temperature",

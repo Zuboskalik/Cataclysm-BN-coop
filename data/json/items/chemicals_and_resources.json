@@ -1257,7 +1257,8 @@
     "spill_field": "fd_industrial_lubricant",
     "description": "A viscous liquid used as an industrial lubricant.",
     "volume": "250 ml",
-    "ammo_type": "components",
+    "ammo_type": "lubricant",
+    "effects": [ "STREAM_INDUSTRIAL_LUBRICANT" ],
     "phase": "liquid"
   },
   {
@@ -1504,13 +1505,13 @@
     "comestible_type": "FOOD",
     "symbol": "=",
     "color": "white",
-    "description": "It's durable and it's scuff resistant!  It even cleans your clothes!  But despite the advertisements, it is not, in fact, delicious.",
+    "description": "It's durable and it's scuff resistant!  It even cleans your clothes!  But despite the advertisements, it is not, in fact, delicious, and its ingredients list is dubious at best.",
     "volume": "250 ml",
     "weight": "1 g",
     "healthy": -20,
     "calories": 600,
     "fun": -15,
-    "vitamins": [ [ "mutant_toxin", 240 ] ],
+    "vitamins": [ [ "mutant_toxin", 5 ] ],
     "qualities": [ [ "SANDING", 1 ] ],
     "container": "box_small",
     "charges": 20
