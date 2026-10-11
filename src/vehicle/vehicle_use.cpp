@@ -828,6 +828,36 @@ void vehicle::use_controls(const tripoint_bub_ms& pos, Character* who) {
         }
     }
 
+    if (has_part("TURRET") && !you.is_avatar()) {
+        // Co-op: a remote player's character at the controls.  Menus go to
+        // that player; aiming picks one target for every turret.
+        options.emplace_back(_("Set turret targeting modes"), keybind("TURRET_TARGET_MODE"));
+        actions.emplace_back([&] {
+            turrets_set_targeting();
+            refresh();
+        });
+        options.emplace_back(_("Set turret firing modes"), keybind("TURRET_FIRE_MODE"));
+        actions.emplace_back([&] {
+            turrets_set_mode();
+            refresh();
+        });
+        options.emplace_back(_("Aim all turrets"), keybind("TURRET_ALL_OVERRIDE"));
+        actions.emplace_back([&] {
+            const std::optional<tripoint_bub_ms> target =
+                cata_mp::remote_target(_("Fire the turrets at:"), 60);
+            if (!target) { return; }
+            int fired = 0;
+            for (vehicle_part* p : turrets()) {
+                turret_data t = turret_query(*p);
+                if (t && t.query() == turret_data::status::ready
+                    && t.in_range(bub_to_abs(*target))) {
+                    fired += t.fire(you, bub_to_abs(*target)) > 0 ? 1 : 0;
+                }
+            }
+            if (fired == 0) { you.add_msg_if_player(m_info, _("No turret can fire there.")); }
+            refresh();
+        });
+    }
     if (has_part("TURRET") && you.is_avatar()) {
         avatar& you = get_avatar();
         std::vector<vehicle_part*> turrets;
@@ -2020,11 +2050,16 @@ void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part, Chara
     if (!you.is_avatar()) {
         switch (choice) {
             case EXAMINE:
+                // The install/repair screen opens on the remote player's own
+                // screen; the job they pick is started here.
+                if (you.is_npc()) {
+                    cata_mp::remote_vehicle_work(*this, pos, you);
+                    return;
+                }
+                break;
             case USE_BIKE_RACK:
             case USE_HARNESS:
             case USE_MONSTER_CAPTURE:
-            case UNLOAD_TURRET:
-            case RELOAD_TURRET:
             case RELOAD_PLANTER:
                 you.add_msg_if_player(m_info, _("That is not available in co-op yet."));
                 return;
@@ -2138,7 +2173,27 @@ void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part, Chara
             return;
         }
         case UNLOAD_TURRET: {
-            avatar_funcs::unload_item(get_avatar(), turret.base());
+            if (you.is_avatar()) {
+                avatar_funcs::unload_item(get_avatar(), turret.base());
+                return;
+            }
+            // Co-op: a remote player's character takes the ammo and magazine.
+            int taken = 0;
+            turret.base().contents.remove_top_items_with(
+                [&you, &taken](detached_ptr<item>&& contained) -> detached_ptr<item> {
+                    if (!contained->is_ammo() && !contained->is_magazine()) {
+                        return std::move(contained);
+                    }
+                    you.add_msg_if_player(_("You unload the %s."), contained->tname());
+                    you.i_add_or_drop(std::move(contained));
+                    ++taken;
+                    return detached_ptr<item>();
+                });
+            if (taken == 0) {
+                you.add_msg_if_player(m_info, _("The %s is already empty."), turret.name());
+            } else {
+                you.mod_moves(-100);
+            }
             return;
         }
         case RELOAD_TURRET: {

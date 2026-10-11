@@ -1990,6 +1990,22 @@ action_result execute( peer_t &p, npc &guy, message &m )
         }
         return action_result{};
     }
+    if( a == "turret_fire" ) {
+        const optional_vpart_position vp = get_map().veh_at( guy.bub_pos() );
+        turret_data turret = vp ? vp->vehicle().turret_query( guy.abs_pos() ) : turret_data();
+        if( !turret ) {
+            return fail( _( "There is no turret here." ) );
+        }
+        if( turret.query() != turret_data::status::ready ) {
+            return fail( string_format( _( "The %s can't fire right now." ), turret.name() ) );
+        }
+        const tripoint_bub_ms target = read_bub( jo );
+        if( !get_map().inbounds( target ) || target == guy.bub_pos() ) {
+            return fail( std::string() );
+        }
+        turret.fire( guy, bub_to_abs( target ) );
+        return action_result{};
+    }
     if( a == "shout" ) {
         guy.shout( jo.get_string( "text", "" ), false );
         return action_result{};
@@ -2709,6 +2725,52 @@ std::vector<std::pair<int, int>> remote_choose_many( const std::string &title,
         picks.emplace_back( pick.get_int( 0 ), pick.get_int( 1 ) );
     }
     return picks;
+}
+
+bool remote_vehicle_work( vehicle &veh, const tripoint_bub_ms &pos, Character &who )
+{
+    const tripoint_abs_ms abs = bub_to_abs( pos );
+    const std::optional<std::string> answer = ask_remote( "vehexam",
+            string_format( ",\"x\":%d,\"y\":%d,\"z\":%d", abs.x(), abs.y(), abs.z() ) );
+    if( !answer ) {
+        return false;
+    }
+    message m( *answer );
+    JsonObject jo = m.object();
+    if( !jo.get_bool( "ok", false ) ) {
+        return false;
+    }
+    std::vector<int> values;
+    jo.read( "values", values );
+    if( values.size() < 7 ) {
+        return false;
+    }
+    const int cmd = jo.get_int( "cmd", 0 );
+    // The jobs the vehicle activity knows: install, repair, refill, remove.
+    if( cmd != 'i' && cmd != 'r' && cmd != 'f' && cmd != 'o' ) {
+        return false;
+    }
+    auto act = std::make_unique<player_activity>( activity_id( "ACT_VEHICLE" ),
+               std::clamp( jo.get_int( "moves", 1000 ), 1, 10000000 ), cmd );
+    for( const tripoint_abs_ms &p : veh.get_points( true ) ) {
+        act->coord_set.insert( p );
+    }
+    act->values = values;
+    act->str_values.push_back( jo.get_string( "part", "" ) );
+    // The part (or other item) to install, from the player's things.
+    if( jo.has_object( "item" ) ) {
+        npc *guy = who.as_npc();
+        JsonObject ij = jo.get_object( "item" );
+        bool on_ground = false;
+        item *it = guy != nullptr ? host::find_action_item( *guy, ij, on_ground ) : nullptr;
+        if( it == nullptr ) {
+            who.add_msg_if_player( m_info, _( "You no longer have that." ) );
+            return false;
+        }
+        act->targets.emplace_back( it );
+    }
+    who.assign_activity( std::move( act ) );
+    return true;
 }
 
 void remote_peek( const tripoint_rel_ms &dir )

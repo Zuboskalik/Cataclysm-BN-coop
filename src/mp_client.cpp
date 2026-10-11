@@ -64,6 +64,7 @@
 #include "ui.h"
 #include "ui_manager.h"
 #include "trap.h"
+#include "vehicle/veh_interact.h"
 #include "vehicle/vehicle.h"
 #include "vehicle/vpart_position.h"
 #include "weather/weather.h"
@@ -792,6 +793,19 @@ void request_craft( const bool is_long, const bool again )
 void request_fire()
 {
     avatar &u = get_avatar();
+    // Unarmed at a vehicle turret: aim it here, the host fires it.
+    if( !u.is_armed() ) {
+        if( const optional_vpart_position vp = get_map().veh_at( u.bub_pos() ) ) {
+            turret_data turret = vp->vehicle().turret_query( u.abs_pos() );
+            if( turret ) {
+                const target_handler::trajectory traj = target_handler::mode_turret_manual( u, turret );
+                if( !traj.empty() ) {
+                    send_action( "turret_fire", pos_fields( traj.back() ) );
+                }
+                return;
+            }
+        }
+    }
     // A reach weapon (spear, whip...) attacks at a distance instead.
     if( u.is_armed() && !( u.primary_weapon().is_gun() &&
                            !u.primary_weapon().gun_current_mode().melee() ) &&
@@ -1242,6 +1256,31 @@ void answer_question( message &m )
                 jo.get_bool( "vertical", false ) );
         reply = dir ? string_format( ",\"ok\":true,\"dx\":%d,\"dy\":%d,\"dz\":%d", dir->x(), dir->y(),
                                      dir->z() ) : ",\"ok\":false";
+    } else if( kind == "vehexam" ) {
+        // The install/repair screen on our copy of the vehicle; the host
+        // starts the job we pick.
+        const tripoint_bub_ms pos = abs_to_bub( tripoint_abs_ms( jo.get_int( "x", 0 ),
+                                                jo.get_int( "y", 0 ), jo.get_int( "z", 0 ) ) );
+        reply = ",\"ok\":false";
+        if( const optional_vpart_position vp = get_map().veh_at( pos ) ) {
+            std::unique_ptr<player_activity> act = veh_interact::run( vp->vehicle(),
+                                                   vp->mount() );
+            if( act && *act ) {
+                std::string values;
+                for( const int v : act->values ) {
+                    values += values.empty() ? "" : ",";
+                    values += std::to_string( v );
+                }
+                reply = string_format( ",\"ok\":true,\"cmd\":%d,\"moves\":%d,\"values\":[%s],\"part\":%s",
+                                       act->index, act->moves_total, values,
+                                       json_quote( act->str_values.empty() ? std::string() : act->str_values[0] ) );
+                if( !act->targets.empty() && act->targets[0] ) {
+                    if( const std::optional<std::string> where = any_item_fields( &*act->targets[0] ) ) {
+                        reply += ",\"item\":{" + where->substr( 1 ) + "}";
+                    }
+                }
+            }
+        }
     } else if( kind == "peek" ) {
         g->peek( tripoint_rel_ms( jo.get_int( "dx", 0 ), jo.get_int( "dy", 0 ), jo.get_int( "dz", 0 ) ) );
     } else if( kind == "multi" ) {

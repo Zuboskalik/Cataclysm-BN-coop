@@ -27,6 +27,7 @@ class main_menu;
 class monster;
 class npc;
 class player;
+class vehicle;
 namespace pickup
 {
 struct pick_drop_selection;
@@ -122,6 +123,9 @@ player *remote_actor();
 std::optional<tripoint_bub_ms> remote_actor_pos();
 // The remote player picks a direction (like choose_direction).
 std::optional<tripoint_rel_ms> remote_direction( const std::string &message, bool allow_vertical );
+// The remote player examines `veh` (the install/repair/remove screen) on
+// their copy; the job they pick is given to `who`.  True if one was started.
+bool remote_vehicle_work( vehicle &veh, const tripoint_bub_ms &pos, Character &who );
 // The remote player peeks in direction `dir` from their character (a view
 // on their own screen).
 void remote_peek( const tripoint_rel_ms &dir );
