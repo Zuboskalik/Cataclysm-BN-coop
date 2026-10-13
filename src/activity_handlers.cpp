@@ -74,6 +74,7 @@
 #include "mongroup.h"
 #include "monster.h"
 #include "morale_types.h"
+#include "mp_session.h"
 #include "mtype.h"
 #include "npc.h"
 #include "output.h"
@@ -4794,8 +4795,38 @@ static void blood_magic( player *p, int cost )
     p->mod_pain( std::max( 1, cost / 3 ) );
 }
 
+namespace
+{
+
+/// A spell of `p` reached `level`.  The event only speaks of the avatar, so
+/// another character (a co-op player's) learns the spells it unlocks here.
+auto notify_spell_level( player &p, const spell_id &sp, const int level ) -> void
+{
+    if( p.is_avatar() ) {
+        g->events().send<event_type::player_levels_spell>( sp, level );
+        return;
+    }
+    for( const auto &[learn_id, learn_at_level] : sp->learn_spells ) {
+        if( level < learn_at_level || p.magic->knows_spell( learn_id ) ) {
+            continue;
+        }
+        p.magic->learn_spell( learn_id, p );
+        p.add_msg_if_player( _( "Your experience and knowledge in creating and manipulating magical "
+                                "energies to cast %s have opened your eyes to new possibilities, you "
+                                "can now cast %s." ), sp->name, spell_id( learn_id )->name );
+    }
+}
+
+} // namespace
+
 void activity_handlers::spellcasting_finish( player_activity *act, player *p )
 {
+    // Co-op: a remote player picks the target on their own screen before
+    // casting; it comes along in the activity.
+    std::optional<tripoint_bub_ms> preset_target;
+    if( !p->is_avatar() && !act->coords.empty() ) {
+        preset_target = abs_to_bub( act->coords.front() );
+    }
     act->set_to_null();
     const int level_override = act->get_value( 0 );
     spell_id sp( act->name );
@@ -4822,10 +4853,25 @@ void activity_handlers::spellcasting_finish( player_activity *act, player *p )
         !spell_being_cast.has_flag( RANDOM_TARGET ) ) {
         g->refresh_player_visibility_cache_if_needed( true );
         do {
-            avatar &you = *p->as_avatar();
-            std::vector<tripoint_bub_ms> trajectory = target_handler::mode_spell( you, spell_being_cast,
-                    no_fail,
-                    no_mana );
+            std::vector<tripoint_bub_ms> trajectory;
+            if( preset_target ) {
+                trajectory.push_back( *std::exchange( preset_target, std::nullopt ) );
+            } else if( avatar *you = p->as_avatar() ) {
+                trajectory = target_handler::mode_spell( *you, spell_being_cast, no_fail, no_mana );
+            } else if( cata_mp::remote_prompts_active() ) {
+                // Co-op: a remote player's character asks its player.
+                const auto dst = cata_mp::remote_target( string_format( _( "Cast %s at:" ),
+                                 spell_being_cast.name() ), spell_being_cast.range() );
+                if( !dst ) {
+                    // Cancelled, or the player left: asking again could
+                    // wait forever.
+                    return;
+                }
+                trajectory.push_back( *dst );
+            } else {
+                // Nobody to pick a target for this character.
+                return;
+            }
             g->refresh_player_visibility_cache_if_needed( true );
 
             if( !trajectory.empty() ) {
@@ -4922,8 +4968,7 @@ void activity_handlers::spellcasting_finish( player_activity *act, player *p )
                                       spell_being_cast.xp() );
             }
             if( spell_being_cast.get_level() != old_level ) {
-                g->events().send<event_type::player_levels_spell>( spell_being_cast.id(),
-                        spell_being_cast.get_level() );
+                notify_spell_level( *p, spell_being_cast.id(), spell_being_cast.get_level() );
             }
         }
     }
@@ -4982,7 +5027,7 @@ void activity_handlers::study_spell_do_turn( player_activity *act, player *p )
 
         if( new_level > old_level ) {
             act->values[1] += new_level - old_level;
-            g->events().send<event_type::player_levels_spell>( studying.id(), new_level );
+            notify_spell_level( *p, studying.id(), new_level );
             if( act->get_str_value( 0 ) == "gain_level" ) {
                 act->moves_left = 0;
             }

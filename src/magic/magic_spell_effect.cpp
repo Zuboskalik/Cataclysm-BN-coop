@@ -818,7 +818,9 @@ void spell_effect::spawn_ethereal_item(const spell& sp, Creature& caster, const 
         granted->set_flag(flag_id("NO_SALVAGE"));
     }
     if (granted->count_by_charges() && sp.damage() > 0) { granted->charges = sp.damage(); }
-    avatar& you = get_avatar();
+    // The caster gets it (in co-op it may be a remote player's character).
+    Character* caster_char = caster.as_character();
+    Character& you = caster_char != nullptr ? *caster_char : get_avatar();
     if (granted->made_of(LIQUID)) {
         liquid_handler::consume_liquid(std::move(granted), 1);
     } else if (you.can_wear(*granted).success()) {
