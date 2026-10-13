@@ -22,6 +22,7 @@
 #include "coordinates.h"
 
 class Character;
+class item;
 class JsonIn;
 class main_menu;
 class monster;
@@ -152,6 +153,11 @@ bool client_capture_pickup( std::vector<pickup::pick_drop_selection> &targets );
 // Client: asks the host to build `id` at `pnt`.  Returns false outside co-op
 // (the caller then builds locally as usual).
 bool client_request_construct( const std::string &id, const tripoint_bub_ms &pnt );
+// Host: a remote player's character fires a bionic or mutation weapon
+// (`fake_gun`, not carried by anybody) at a target its player picks.  Power
+// is paid per shot.  False when `who` is not the character of the remote
+// player whose action is running (nothing was done then).
+bool proxy_fire_fake_gun( Character &who, item &fake_gun, int64_t cost_per_shot_joules );
 // Host: features that skip turns in bulk would skip remote players' turns too.
 bool suppress_time_skipping();
 

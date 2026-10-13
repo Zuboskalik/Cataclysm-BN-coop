@@ -56,7 +56,7 @@ Client → host:
 | --- | --- |
 | `probe` | `ver` (`<protocol>|<build>`, must match exactly), `pw` |
 | `join` | `name`, `ver`, `pw`, `char` (serialized new character) or `null` to continue an existing one |
-| `act` | `seq`, `a` = `move`(`dx`,`dy`) `vmove`(`dz`) `pause` `wait`(`turns`) `open`/`close`/`smash`(`x`,`y`,`z`) `pickup`(`x`,`y`,`z`,`items`=[[ground index,count,type]]) `drop`(`items`=[[item index,count,type]]) `wield`/`wear`/`takeoff`/`eat`(`idx`,`type`) `unwield` `move_mode`(`mode`) |
+| `act` | `seq`, `a` = `move`(`dx`,`dy`) `vmove`(`dz`) `pause` `wait`(`turns`) `open`/`close`/`smash`(`x`,`y`,`z`) `pickup`(`x`,`y`,`z`,`items`=[[ground index,count,type]]) `drop`(`items`=[[item index,count,type]]) `wield`/`wear`/`takeoff`/`eat`(`idx`,`type`) `unwield` `move_mode`(`mode`) `cast`(`id`,`ignore`, target `x`,`y`,`z` if the spell needs one) `bionic`(`idx`,`id`, `style` for the CQB bionic) `mutation`(`id`,`on`) `style`(`style`,`hands_free`) |
 | `stop_wait`, `chat`(`text`), `need`(`sm`=[[x,y,z]]), `resync`, `quit` | |
 
 Host → client:
@@ -79,3 +79,13 @@ Submaps are diffed by a hash of their serialization (ignoring the
 last-touched timestamps and temperature). Each broadcast re-checks the
 submaps around every player, sends whole z-levels the first time a player is
 on them, and walks a slice of the bubble so changes far away still arrive.
+
+## Magic, bionics and mutations
+
+Spells, bionics, mutations and martial arts styles are picked on the client's
+copy of its character with the game's own menus (the spell's target too,
+with the spell targeting UI) and sent as `cast`, `bionic`, `mutation` and
+`style` actions; the host repeats the game's checks and runs them on the
+proxy.  Things that need a target while the host runs them for a proxy
+(spells cast from items, bionic guns, ranged mutations) ask the remote
+player through the usual `ask`/`target` question.

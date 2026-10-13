@@ -17,8 +17,10 @@
 
 #include "activity_actor_definitions.h"
 #include "avatar.h"
+#include "bionics.h"
 #include "calendar.h"
 #include "character.h"
+#include "character_martial_arts.h"
 #include "debug.h"
 #include "game.h"
 #include "cata_utility.h"
@@ -35,6 +37,7 @@
 #include "itype.h"
 #include "item_handling_util.h"
 #include "line.h"
+#include "magic/magic.h"
 #include "map/map.h"
 #include "map/mapbuffer.h"
 #include "map/mapdata.h"
@@ -44,6 +47,7 @@
 #include "map/field_type.h"
 #include "monster.h"
 #include "mtype.h"
+#include "mutation_ui.h"
 #include "mp_common.h"
 #include "mp_net.h"
 #include "npc.h"
@@ -1142,6 +1146,137 @@ void request_autoattack()
     send_action( "autoattack" );
 }
 
+// The style the character has picked; nothing else tells it.
+std::string selected_style( const Character &who )
+{
+    const std::string json = write_json( [&who]( JsonOut & jsout ) {
+        who.martial_arts_data->serialize( jsout );
+    } );
+    std::istringstream is( json );
+    JsonIn jsin( is );
+    JsonObject jo = jsin.get_object();
+    jo.allow_omitted_members();
+    return jo.get_string( "style_selected", "" );
+}
+
+// Casting (C): the spell, and its target when it needs one, are picked here
+// on our copy of the character; the host checks and casts.
+void request_cast( const bool last )
+{
+    avatar &u = get_avatar();
+    spell *sp = nullptr;
+    if( last ) {
+        const std::optional<spell_id> id = u.magic->last_cast_spell();
+        if( !id || !u.magic->knows_spell( *id ) ) {
+            add_msg( m_info, _( "You haven't cast any spells yet." ) );
+            return;
+        }
+        sp = &u.magic->get_spell( *id );
+    } else {
+        if( !u.magic->knows_spell() ) {
+            add_msg( m_info, _( "You don't know any spells to cast." ) );
+            return;
+        }
+        const int index = u.magic->select_spell( u );
+        const std::vector<spell *> spells = u.magic->get_spells();
+        if( index < 0 || index >= static_cast<int>( spells.size() ) ) {
+            return;
+        }
+        sp = spells[index];
+    }
+    std::string extra = ",\"id\":" + json_quote( sp->id().str() ) +
+                        string_format( ",\"ignore\":%s", u.magic->casting_ignore ? "true" : "false" );
+    if( sp->range() > 0 && !sp->is_valid_target( target_none ) &&
+        !sp->has_flag( RANDOM_TARGET ) ) {
+        const target_handler::trajectory trajectory = target_handler::mode_spell( u, *sp, false, false );
+        if( trajectory.empty() ) {
+            return;
+        }
+        extra += pos_fields( trajectory.back() );
+    }
+    send_action( "cast", extra );
+}
+
+// Bionics (p): turning one on or off.  The game's own screen would toggle
+// them on our copy; the host does it instead.
+void request_bionic()
+{
+    avatar &u = get_avatar();
+    bionic_collection &bios = *u.my_bionics;
+    uilist menu;
+    menu.text = string_format( _( "Activate which bionic?  Bionic power: %d / %d kJ" ),
+                               units::to_kilojoule( u.get_power_level() ),
+                               units::to_kilojoule( u.get_max_power_level() ) );
+    menu.desc_enabled = true;
+    std::vector<int> indices;
+    for( int i = 0; i < static_cast<int>( bios.size() ); ++i ) {
+        const bionic &bio = bios[i];
+        if( !bio.info().activated ) {
+            continue;
+        }
+        const std::string label = string_format( "%s (%s)", bio.info().name.translated(),
+                                  bio.powered ? _( "on" ) : _( "off" ) );
+        menu.addentry_desc( static_cast<int>( indices.size() ), true,
+                            bio.invlet, label, bio.info().description.translated() );
+        indices.push_back( i );
+    }
+    if( indices.empty() ) {
+        add_msg( m_info, _( "You don't have any bionics you could activate." ) );
+        return;
+    }
+    menu.query();
+    if( menu.ret < 0 || menu.ret >= static_cast<int>( indices.size() ) ) {
+        return;
+    }
+    bionic &bio = bios[indices[menu.ret]];
+    std::string extra = string_format( ",\"idx\":%d,\"id\":%s", indices[menu.ret],
+                                       json_quote( bio.id.str() ) );
+    if( bio.id == bionic_id( "bio_cqb" ) && !bio.powered ) {
+        // Turning it on asks for one of its styles at once.
+        bio.powered = true;
+        const bool picked = u.martial_arts_data->pick_style( u );
+        bio.powered = false;
+        if( !picked ) {
+            return;
+        }
+        extra += ",\"style\":" + json_quote( selected_style( u ) );
+    }
+    send_action( "bionic", extra );
+}
+
+// Mutations (+): the game's own screen picks one, the host (de)activates it.
+void request_mutation()
+{
+    avatar &u = get_avatar();
+    const detail::mutations_ui_result res = detail::show_mutations_ui_internal( u );
+    if( res.cmd == detail::mutations_ui_cmd::exit ) {
+        return;
+    }
+    send_action( "mutation", ",\"id\":" + json_quote( res.mut.str() ) +
+                 string_format( ",\"on\":%s", res.cmd == detail::mutations_ui_cmd::activate ? "true" : "false" ) );
+}
+
+// Martial arts style (_): the game's own menu on our copy; what it picked
+// goes to the host.
+void request_style()
+{
+    avatar &u = get_avatar();
+    character_martial_arts &ma = *u.martial_arts_data;
+    const std::string before = selected_style( u );
+    const bool hands_free_before = ma.keep_hands_free;
+    if( !ma.pick_style( u ) ) {
+        return;
+    }
+    std::string extra = string_format( ",\"hands_free\":%s", ma.keep_hands_free ? "true" : "false" );
+    const std::string after = selected_style( u );
+    if( after != before ) {
+        extra += ",\"style\":" + json_quote( after );
+    } else if( ma.keep_hands_free == hands_free_before ) {
+        return;
+    }
+    send_action( "style", extra );
+}
+
 bool is_local_ui_action( action_id act )
 {
     switch( act ) {
@@ -2155,6 +2290,19 @@ bool client_intercept_action( action_id act,
         }
         case ACTION_RESET_MOVE:
             client::send_action( "move_mode", string_format( ",\"mode\":%d", CMM_WALK ) );
+            return true;
+        case ACTION_CAST_SPELL:
+        case ACTION_CAST_LAST_SPELL:
+            client::request_cast( act == ACTION_CAST_LAST_SPELL );
+            return true;
+        case ACTION_BIONICS:
+            client::request_bionic();
+            return true;
+        case ACTION_MUTATIONS:
+            client::request_mutation();
+            return true;
+        case ACTION_PICK_STYLE:
+            client::request_style();
             return true;
         default:
             add_msg( m_info, _( "That action is not available in co-op yet." ) );

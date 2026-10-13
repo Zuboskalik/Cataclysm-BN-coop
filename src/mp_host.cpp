@@ -16,15 +16,21 @@
 
 #include "activity_actor_definitions.h"
 #include "avatar.h"
+#include "bionics.h"
 #include "calendar.h"
+#include "catalua.h"
+#include "catalua_hooks.h"
+#include "catalua_icallback_actor.h"
 #include "character.h"
 #include "character_functions.h"
+#include "character_martial_arts.h"
 #include "character_turn.h"
 #include "crafting.h"
 #include "creature.h"
 #include "debug.h"
 #include "effect.h"
 #include "faction.h"
+#include "flag.h"
 #include "game.h"
 #include "overmap/overmap_ui.h"
 #include "character_display.h"
@@ -38,6 +44,7 @@
 #include "item.h"
 #include "item_handling_util.h"
 #include "line.h"
+#include "magic/magic.h"
 #include "map/map.h"
 #include "map/mapbuffer.h"
 #include "map/mapdata.h"
@@ -45,7 +52,9 @@
 #include "messages.h"
 #include "map/field_type.h"
 #include "monster.h"
+#include "martialarts.h"
 #include "mtype.h"
+#include "mutation.h"
 #include "mp_common.h"
 #include "mp_net.h"
 #include "npc.h"
@@ -76,7 +85,10 @@
 #include "worldfactory.h"
 #include "world.h"
 
+static const bionic_id bio_cqb( "bio_cqb" );
 static const efftype_id effect_npc_suspend( "npc_suspend" );
+static const quality_id qual_CUT( "CUT" );
+static const trait_id trait_BRAWLER( "BRAWLER" );
 static const faction_id faction_your_followers( "your_followers" );
 
 // Grants the co-op host code access to a few private parts of `game`.
@@ -1893,6 +1905,153 @@ action_result do_use( npc &guy, const JsonObject &jo )
     return action_result{};
 }
 
+// Casts a spell the character knows (C).  The player picked the spell, and
+// the target if it needs one, on their own screen; the checks are those the
+// game makes for the player before casting.
+action_result do_cast( npc &guy, const JsonObject &jo )
+{
+    const spell_id sp_id( jo.get_string( "id", "" ) );
+    if( !sp_id.is_valid() || !guy.magic->knows_spell( sp_id ) ) {
+        return fail( _( "You don't know that spell." ) );
+    }
+    spell &sp = guy.magic->get_spell( sp_id );
+    if( !( sp.has_flag( spell_flag::BRAWL ) || sp.has_flag( spell_flag::PHYSICAL ) ) &&
+        guy.has_trait( trait_BRAWLER ) ) {
+        return fail( _( "Pfft, that spell is for COWARDS, and a Brawler like you is no coward!" ) );
+    }
+    for( const trait_id &blocker : sp.get_blocker_muts() ) {
+        if( guy.has_trait( blocker ) ) {
+            return fail( string_format( _( "Your %s mutation prevents you from casting this spell!" ),
+                                        blocker->name() ) );
+        }
+    }
+    if( guy.is_armed() && !( sp.has_flag( spell_flag::NO_HANDS ) ||
+                             sp.has_flag( spell_flag::PHYSICAL ) ) &&
+        !guy.primary_weapon().has_flag( flag_MAGIC_FOCUS ) &&
+        guy.primary_weapon().is_two_handed( guy ) ) {
+        return fail( _( "You need at least one hand free to cast this spell!" ) );
+    }
+    if( !guy.magic->has_enough_energy( guy, sp ) ) {
+        return fail( string_format( _( "You don't have enough %s to cast the spell." ),
+                                    sp.energy_string() ) );
+    }
+    if( sp.energy_source() == hp_energy && !guy.has_quality( qual_CUT ) ) {
+        return fail( _( "You cannot cast Blood Magic without a cutting implement." ) );
+    }
+    const auto hook_results = cata::run_hooks( "on_spell_try_cast", [&]( sol::table & params ) {
+        params["char"] = static_cast<Character *>( &guy );
+        params["spell"] = &sp;
+    } );
+    if( !hook_results.get_or( "allowed", true ) ) {
+        return fail( std::string() );
+    }
+    if( sp.type->lua_callbacks && !sp.type->lua_callbacks->call_on_try_cast( guy, sp ) ) {
+        return fail( std::string() );
+    }
+
+    auto act = std::make_unique<player_activity>( activity_id( "ACT_SPELLCASTING" ),
+               sp.casting_time( guy ) );
+    // Same values as a spell cast by the player: own level, may fail, costs energy.
+    act->values = { -1, 0, 1 };
+    act->name = sp.id().str();
+    if( jo.has_int( "x" ) ) {
+        // spellcasting_finish() takes it instead of asking for a target.
+        act->coords.push_back( bub_to_abs( read_bub( jo ) ) );
+    }
+    guy.magic->casting_ignore = jo.get_bool( "ignore", false );
+    if( guy.magic->casting_ignore ) {
+        for( const distraction_type d : {
+                 distraction_type::alert, distraction_type::noise, distraction_type::pain,
+                 distraction_type::attacked, distraction_type::hostile_spotted_near,
+                 distraction_type::hostile_spotted_far, distraction_type::talked_to,
+                 distraction_type::asthma, distraction_type::weather_change
+             } ) {
+            act->ignore_distraction( d );
+        }
+    }
+    guy.magic->set_last_cast_spell( sp.id() );
+    guy.assign_activity( std::move( act ), false );
+    return action_result{};
+}
+
+// Turns an installed bionic on or off.  It is addressed by its index among
+// the character's bionics; the id is a cross-check.
+action_result do_bionic( npc &guy, const JsonObject &jo )
+{
+    bionic_collection &bios = *guy.my_bionics;
+    const int idx = jo.get_int( "idx", -1 );
+    const bionic_id id( jo.get_string( "id", "" ) );
+    bionic *bio = nullptr;
+    if( idx >= 0 && idx < static_cast<int>( bios.size() ) && bios[idx].id == id ) {
+        bio = &bios[idx];
+    } else {
+        const auto found = std::ranges::find( bios, id, &bionic::id );
+        bio = found != bios.end() ? &*found : nullptr;
+    }
+    if( bio == nullptr ) {
+        return fail( _( "You don't have that bionic." ) );
+    }
+    if( !bio->info().activated ) {
+        return fail( string_format( _( "Your %s can't be activated." ), bio->info().name ) );
+    }
+    if( bio->powered ) {
+        guy.deactivate_bionic( *bio );
+    } else {
+        guy.activate_bionic( *bio );
+        if( bio->powered && bio->id == bio_cqb ) {
+            // The game asks the player for a style right away.
+            const std::string style = jo.get_string( "style", "" );
+            if( !style.empty() && matype_id( style ).is_valid() ) {
+                // The player's own menu already told them about it.
+                guy.martial_arts_data->set_style( matype_id( style ), true );
+            }
+        }
+    }
+    return action_result{};
+}
+
+// Activates or deactivates a mutation (the mutations screen).
+action_result do_mutation( npc &guy, const JsonObject &jo )
+{
+    const trait_id mut( jo.get_string( "id", "" ) );
+    if( !mut.is_valid() || !guy.has_trait( mut ) ) {
+        return fail( _( "You don't have that mutation." ) );
+    }
+    if( !mut->activated && !mut->transform ) {
+        return fail( string_format( _( "You cannot activate %s!" ), mut->name() ) );
+    }
+    if( jo.get_bool( "on", true ) ) {
+        guy.activate_mutation( mut );
+    } else {
+        guy.deactivate_mutation( mut );
+    }
+    return action_result{};
+}
+
+// Picks a martial arts style (the style menu).
+action_result do_style( npc &guy, const JsonObject &jo )
+{
+    character_martial_arts &ma = *guy.martial_arts_data;
+    if( jo.has_bool( "hands_free" ) ) {
+        ma.keep_hands_free = jo.get_bool( "hands_free" );
+    }
+    if( !jo.has_string( "style" ) ) {
+        return action_result{};
+    }
+    const matype_id style( jo.get_string( "style" ) );
+    if( !style.is_valid() ) {
+        return fail( std::string() );
+    }
+    // With the CQB bionic on, its styles may be picked without knowing them.
+    const bool cqb = guy.has_active_bionic( bio_cqb );
+    if( !ma.has_martialart( style ) && !cqb ) {
+        return fail( _( "You don't know that style." ) );
+    }
+    // The player's own menu already told them about it.
+    ma.set_style( style, cqb );
+    return action_result{};
+}
+
 action_result execute( peer_t &p, npc &guy, message &m )
 {
     JsonObject jo = m.object();
@@ -2027,6 +2186,18 @@ action_result execute( peer_t &p, npc &guy, message &m )
     }
     if( a == "drive" ) {
         return do_drive( guy, jo );
+    }
+    if( a == "cast" ) {
+        return do_cast( guy, jo );
+    }
+    if( a == "bionic" ) {
+        return do_bionic( guy, jo );
+    }
+    if( a == "mutation" ) {
+        return do_mutation( guy, jo );
+    }
+    if( a == "style" ) {
+        return do_style( guy, jo );
     }
     return fail( _( "That action is not available in co-op yet." ) );
 }
@@ -2795,6 +2966,39 @@ std::optional<tripoint_bub_ms> remote_target( const std::string &prompt, int ran
         return std::nullopt;
     }
     return pos;
+}
+
+bool proxy_fire_fake_gun( Character &who, item &fake_gun, int64_t cost_per_shot_joules )
+{
+    player *actor = remote_actor();
+    if( actor == nullptr || actor != &who ) {
+        return false;
+    }
+    gun_mode mode = fake_gun.gun_current_mode();
+    if( !mode ) {
+        return true;
+    }
+    if( fake_gun.ammo_required() > 0 && fake_gun.ammo_remaining() == 0 ) {
+        who.add_msg_if_player( m_info, _( "Your %s is empty." ), fake_gun.tname() );
+        return true;
+    }
+    const units::energy cost = units::from_joule( cost_per_shot_joules );
+    if( cost > 0_J && who.get_power_level() < cost ) {
+        who.add_msg_if_player( m_info, _( "You don't have enough power to fire your %s." ),
+                               fake_gun.tname() );
+        return true;
+    }
+    const std::optional<tripoint_bub_ms> target = remote_target(
+                string_format( _( "Fire your %s at:" ), fake_gun.tname() ),
+                std::max( 1, fake_gun.gun_range( true ) ) );
+    if( !target || *target == who.bub_pos() ) {
+        return true;
+    }
+    const int shots = ranged::fire_gun( who, *target, mode.qty, *mode, nullptr );
+    if( shots > 0 && cost > 0_J ) {
+        who.mod_power_level( -cost * shots );
+    }
+    return true;
 }
 
 std::optional<tripoint_bub_ms> remote_tile( const std::string &prompt )

@@ -51,6 +51,7 @@
 #include "messages.h"
 #include "monster.h"
 #include "morale_types.h"
+#include "mp_session.h"
 #include "mutation.h"
 #include "npc.h"
 #include "options.h"
@@ -719,9 +720,15 @@ bool Character::activate_bionic( bionic &bio, bool eff_only, bool *close_bionics
         if( close_bionics_ui ) {
             *close_bionics_ui = true;
         }
-        avatar_action::fire_ranged_bionic( *this->as_avatar(),
-                                           item::spawn( bio.info().fake_item ),
-                                           bio.info().power_activate );
+        if( avatar *you = as_avatar() ) {
+            avatar_action::fire_ranged_bionic( *you, item::spawn( bio.info().fake_item ),
+                                               bio.info().power_activate );
+        } else {
+            // Co-op: a remote player's character; nobody else can aim it.
+            detached_ptr<item> fake_gun = item::spawn( bio.info().fake_item );
+            cata_mp::proxy_fire_fake_gun( *this, *fake_gun,
+                                          units::to_joule( bio.info().power_activate ) );
+        }
     } else if( bio.info().has_flag( flag_BIONIC_WEAPON ) ) {
         if( primary_weapon().has_flag( flag_NO_UNWIELD ) ) {
             add_msg_if_player( m_info, _( "Deactivate your %s first!" ), primary_weapon().tname() );

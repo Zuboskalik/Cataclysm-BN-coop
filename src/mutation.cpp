@@ -25,6 +25,7 @@
 #include "math_defines.h"
 #include "memorial_logger.h"
 #include "monster.h"
+#include "mp_session.h"
 #include "options.h"
 #include "output.h"
 #include "overmap/omdata.h"
@@ -614,8 +615,13 @@ void Character::activate_mutation( const trait_id &mut )
         return;
     } else if( !mdata.ranged_mutation.is_empty() ) {
         add_msg_if_player( mdata.ranged_mutation_message() );
-        //TODO!: check later
-        avatar_action::fire_ranged_mutation( g->u, item::spawn( mdata.ranged_mutation ) );
+        if( avatar *you = as_avatar() ) {
+            avatar_action::fire_ranged_mutation( *you, item::spawn( mdata.ranged_mutation ) );
+        } else {
+            // Co-op: a remote player's character; nobody else can aim it.
+            detached_ptr<item> fake_gun = item::spawn( mdata.ranged_mutation );
+            cata_mp::proxy_fire_fake_gun( *this, *fake_gun, 0 );
+        }
         tdata.powered = false;
         return;
     }
