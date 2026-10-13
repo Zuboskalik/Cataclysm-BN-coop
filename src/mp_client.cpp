@@ -1759,10 +1759,12 @@ bool client_do_turn()
         if( !S.end_reason.empty() ) {
             popup( "%s", S.end_reason );
         }
-        // Drop our copies of the host's creatures before the game tears the
-        // world down; held references would otherwise outlive it.
-        client::remove_all_monsters();
-        client::remove_all_npcs();
+        // Let go of our references to the host's creatures before the game
+        // tears the world down (it removes the creatures itself; doing it here
+        // would destroy them too early).
+        S.monsters.clear();
+        client::rebuild_monster_seeds();
+        S.npc_ids.clear();
         g->uquit = QUIT_NOSAVED;
         return true;
     }
