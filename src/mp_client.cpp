@@ -441,7 +441,12 @@ void apply_state( message &m )
     const int old_z = u.abs_pos().z();
 
     if( jo.has_string( "acting" ) ) {
-        S.acting = jo.get_string( "acting" );
+        const std::string acting = jo.get_string( "acting" );
+        if( acting != S.acting ) {
+            // The wait for the next player starts now.
+            S.acting = acting;
+            S.turn_wait_started = net::now_ms();
+        }
     }
     if( jo.has_array( "players" ) ) {
         jo.read( "players", S.players );
@@ -1762,6 +1767,10 @@ void update_waiting_notice()
     if( !waiting_notice ) {
         waiting_notice = std::make_unique<static_popup>();
         waiting_notice->on_top( true );
+    }
+    // Waiting without having acted yet (just joined): count from now.
+    if( S.turn_wait_started <= 0 ) {
+        S.turn_wait_started = net::now_ms();
     }
     const int secs = S.turn_wait_started > 0 ?
                      static_cast<int>( ( net::now_ms() - S.turn_wait_started ) / 1000 ) : 0;
