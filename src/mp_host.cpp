@@ -880,6 +880,12 @@ tripoint_bub_ms read_bub( const JsonObject &jo )
 
 action_result do_move( npc &guy, int dx, int dy )
 {
+    // The sprite looks the way the player moves, as the avatar's does.
+    if( dx > 0 ) {
+        guy.facing = FD_RIGHT;
+    } else if( dx < 0 ) {
+        guy.facing = FD_LEFT;
+    }
     map &here = get_map();
     const tripoint_bub_ms dest = guy.bub_pos() + tripoint_rel_ms( dx, dy, 0 );
     if( !here.inbounds( dest ) || !in_safe_area( dest ) ) {
@@ -3062,9 +3068,14 @@ std::optional<tripoint_rel_ms> remote_direction( const std::string &prompt, bool
     if( !jo.get_bool( "ok", false ) ) {
         return std::nullopt;
     }
-    return tripoint_rel_ms( std::clamp( jo.get_int( "dx", 0 ), -1, 1 ),
-                            std::clamp( jo.get_int( "dy", 0 ), -1, 1 ),
-                            allow_vertical ? std::clamp( jo.get_int( "dz", 0 ), -1, 1 ) : 0 );
+    const tripoint_rel_ms dir( std::clamp( jo.get_int( "dx", 0 ), -1, 1 ),
+                               std::clamp( jo.get_int( "dy", 0 ), -1, 1 ),
+                               allow_vertical ? std::clamp( jo.get_int( "dz", 0 ), -1, 1 ) : 0 );
+    // The character turns to what it deals with, as the avatar does.
+    if( player *actor = remote_actor(); actor != nullptr && dir.x() != 0 ) {
+        actor->facing = dir.x() > 0 ? FD_RIGHT : FD_LEFT;
+    }
+    return dir;
 }
 
 std::vector<std::pair<int, int>> remote_choose_many( const std::string &title,

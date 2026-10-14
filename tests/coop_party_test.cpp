@@ -4,13 +4,18 @@
 #include "event.h"
 #include "event_bus.h"
 #include "game.h"
+#include "json.h"
 #include "kill_tracker.h"
 #include "line.h"
+#include "map_helpers.h"
 #include "mission.h"
+#include "monster.h"
 #include "mp_common.h"
 #include "npc.h"
 #include "player_helpers.h"
 #include "state_helpers.h"
+
+#include <sstream>
 
 // Co-op: the other players share the avatar's missions and reputation.  On
 // the host a remote player is an NPC marked as a proxy.
@@ -73,4 +78,20 @@ TEST_CASE("a place any player reaches completes a shared mission", "[coop][missi
     REQUIRE(rl_dist(get_avatar().abs_omt_pos(), player2.abs_omt_pos()) > 1);
 
     CHECK(miss->is_complete(character_id()));
+}
+
+TEST_CASE("which way a creature looks survives serialization", "[coop][monster]") {
+    clear_all_state();
+    monster& zombie = spawn_test_monster("mon_zombie", tripoint_bub_ms{60, 60, 0});
+    zombie.facing = FD_LEFT;
+
+    std::ostringstream os;
+    JsonOut jsout(os);
+    zombie.serialize(jsout);
+    std::istringstream is(os.str());
+    JsonIn jsin(is);
+    auto copy = monster();
+    copy.deserialize(jsin);
+
+    CHECK(copy.facing == FD_LEFT);
 }

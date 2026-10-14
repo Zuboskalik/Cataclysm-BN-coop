@@ -3714,6 +3714,10 @@ void Creature::store( JsonOut &jsout ) const
 {
     jsout.member( "moves", moves );
     jsout.member( "pain", pain );
+    // Which way the sprite looks; co-op clients draw creatures from this.
+    if( facing != FD_RIGHT ) {
+        jsout.member( "facing", static_cast<int>( facing ) );
+    }
 
     // killer is not stored, it's temporary anyway, any creature that has a non-null
     // killer is dead (as per definition) and should not be stored.
@@ -3766,6 +3770,9 @@ void Creature::load( const JsonObject &jsin )
     jsin.allow_omitted_members();
     jsin.read( "moves", moves );
     jsin.read( "pain", pain );
+    const int facing_value = jsin.get_int( "facing", static_cast<int>( FD_RIGHT ) );
+    facing = facing_value == FD_LEFT || facing_value == FD_NONE ?
+             static_cast<FacingDirection>( facing_value ) : FD_RIGHT;
 
     killer.reset();
 
