@@ -173,6 +173,9 @@ player &acting_player();
 std::vector<player *> party_members();
 // Host: a message the remote players should see as well (shared missions).
 void share_message( int /* game_message_type */ type, const std::string &text );
+// Host: `who` shouts; the remote players near enough to hear it (other than
+// `who` itself) get `text` in their message log.
+void share_shout( const Character &who, const std::string &text );
 
 // ---- conversations ----------------------------------------------------------
 // The NPC said `challenge`; the remote player picks one of `responses` in a

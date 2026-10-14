@@ -65,7 +65,7 @@ Host → client:
 | --- | --- |
 | `welcome` | `world`, `host`, `seed`, `mods`, `options`, `players` (characters that can be continued) |
 | `joined` | `name`, `host` |
-| `state` | `turn`; `you` (proxy, serialized NPC); `sm` (submaps, map save format); `mon`+`mon_keys`, `mon_del`, `mon_reset`; `npc`+`npc_keys`, `npc_del`, `npc_reset`, `host_id`; `omt` ([x,y,z,oter id]); `missions` (`world` missions, the journal's `active`/`completed`/`failed` uids, `current`); `msg` ([type,text]) |
+| `state` | `turn`; `acting` (whose turn it is); `players` (the host, then the remote players); `you` (proxy, serialized NPC); `sm` (submaps, map save format); `mon`+`mon_keys`, `mon_del`, `mon_reset`; `npc`+`npc_keys`, `npc_del`, `npc_reset`, `host_id`; `omt` ([x,y,z,oter id]); `missions` (`world` missions, the journal's `active`/`completed`/`failed` uids, `current`); `msg` ([type,text]) |
 | `turn` | it is your turn |
 | `ack` | `seq`, `ok` |
 | `chat`, `error`(`msg`), `bye`(`msg`), `died` | |
@@ -109,3 +109,14 @@ a place any player reaches counts, and items a mission asks for are taken
 from (and rewards given to) the player who turns it in.  Hurting an NPC
 angers it at all players, and an NPC that joins one of them is everyone's
 ally.
+
+## Players who leave
+
+The character of a player who is not connected is taken out of the world at
+the end of the turn (nothing can hurt or move it) and kept in
+`coop_players.json` in the world folder; when that player joins again it comes
+back next to the host.  The characters of connected players are also copied
+there every minute and when the host's game ends, so a host that quits
+without saving or crashes does not cost them their progress.  Each entry
+remembers the game turn it was taken at: when the world holds an older copy
+of the character, the entry wins, otherwise the world's copy does.

@@ -9140,6 +9140,11 @@ void Character::shout( std::string msg, bool order )
         return;
     }
 
+    // Co-op: the other players' screens show the shout in their log.
+    cata_mp::share_shout( *this, msg.empty() ?
+                          string_format( _( "%s shouts loudly!" ), get_name() ) :
+                          string_format( _( "%1$s yells \"%2$s\"" ), get_name(), msg ) );
+
     // Mutations make shouting louder, they also define the default message
     if( msg.empty() ) {
         if( has_trait( trait_SHOUT3 ) ) {

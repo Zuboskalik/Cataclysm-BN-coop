@@ -3181,6 +3181,23 @@ local_prompts_scope::~local_prompts_scope()
     host::prompt_peer = saved_;
 }
 
+void share_shout( const Character &who, const std::string &text )
+{
+    if( !is_host() ) {
+        return;
+    }
+    // About as far as a shout carries in the game.
+    constexpr int shout_range = 60;
+    for( auto &[id, p] : host::peers ) {
+        const npc *guy = p.joined ? host::proxy_of( p ) : nullptr;
+        if( guy == nullptr || guy->getID() == who.getID() || guy->is_deaf() ||
+            rl_dist( guy->abs_pos(), who.abs_pos() ) > shout_range ) {
+            continue;
+        }
+        host::send_to_player( p, m_info, remove_color_tags( text ) );
+    }
+}
+
 bool remote_prompts_active()
 {
     return is_host() && host::prompt_peer >= 0;
