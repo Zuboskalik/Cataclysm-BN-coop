@@ -1047,7 +1047,8 @@ void handle_join( peer_t &p, message &m )
 void park_proxy( const peer_t &p )
 {
     if( npc *proxy = proxy_of( p ) ) {
-        // An offline player's character stays where it is, out of time.
+        // Until the end of the turn, when it is taken out of the world, an
+        // offline player's character stays where it is, out of time.
         proxy->add_effect( effect_npc_suspend, time_duration::from_turns( calendar::INDEFINITELY_LONG ) );
         proxy->cancel_activity();
     }

@@ -1837,7 +1837,8 @@ std::string status_line()
 void leave_session( bool ask )
 {
     if( ask ) {
-        if( !query_yn( _( "Leave the co-op session?  Your character stays in the host's world." ) ) ) {
+        if( !query_yn(
+                _( "Leave the co-op session?  The host keeps your character and brings it back when you join again." ) ) ) {
             return;
         }
         send( "{\"t\":\"quit\"}" );
