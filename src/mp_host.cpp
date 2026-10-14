@@ -167,6 +167,8 @@ int prompt_peer = -1;
 int next_question_id = 1;
 // Tells the remote player's conversation windows apart.
 int next_conversation_id = 0;
+// The player whose turn it is (the host's name during the host's turn).
+std::string acting_name;
 // Raw answer messages by question id.
 std::map<int, std::string> answers;
 
@@ -264,6 +266,8 @@ std::string world_name()
     return std::string();
 }
 
+std::vector<std::string> stored_player_names();
+
 std::vector<std::string> proxy_names_in_world()
 {
     std::vector<std::string> names;
@@ -282,6 +286,11 @@ std::vector<std::string> proxy_names_in_world()
             add( *guy );
         }
     }
+    for( const std::string &name : stored_player_names() ) {
+        if( std::ranges::find( names, name ) == names.end() ) {
+            names.push_back( name );
+        }
+    }
     return names;
 }
 
@@ -296,6 +305,181 @@ void configure_proxy( npc &guy, const std::string &player_name )
     guy.remove_effect( effect_npc_suspend );
 }
 
+// ---- characters of players who are not playing ------------------------------
+//
+// Like drop-in games do, the character of a player who left is taken out of
+// the world (nothing can hurt or move it) and kept here; it comes back next to
+// the host when that player joins again.  The characters of players who are
+// online are copied here now and then too, so a host that quits without saving
+// or crashes does not cost them their progress.  Kept in the world folder;
+// each entry remembers the game turn it was taken at, and the newer of an
+// entry and a character found in the world wins.
+
+constexpr const char *players_file = "coop_players.json";
+
+struct stored_player {
+    std::string json;
+    int turn = 0;
+};
+std::map<std::string, stored_player> stored_players;
+// The world the entries above belong to.
+std::string stored_players_world;
+
+void load_stored_players()
+{
+    if( stored_players_world == world_name() ) {
+        return;
+    }
+    stored_players.clear();
+    stored_players_world = world_name();
+    world *w = g->get_active_world();
+    if( w == nullptr ) {
+        return;
+    }
+    w->read_from_file_json( players_file, []( JsonIn & jsin ) {
+        JsonObject jo = jsin.get_object();
+        jo.allow_omitted_members();
+        for( JsonObject entry : jo.get_array( "players" ) ) {
+            entry.allow_omitted_members();
+            const std::string name = entry.get_string( "name", "" );
+            if( name.empty() || !entry.has_object( "char" ) ) {
+                continue;
+            }
+            stored_players[name] = stored_player{
+                .json = entry.get_object( "char" ).str(),
+                .turn = entry.get_int( "turn", 0 ),
+            };
+        }
+    }, true );
+}
+
+void save_stored_players()
+{
+    world *w = g->get_active_world();
+    if( w == nullptr ) {
+        return;
+    }
+    w->write_to_file( players_file, []( std::ostream & fout ) {
+        JsonOut jsout( fout );
+        jsout.start_object();
+        jsout.member( "players" );
+        jsout.start_array();
+        for( const auto &[name, entry] : stored_players ) {
+            jsout.start_object();
+            jsout.member( "name", name );
+            jsout.member( "turn", entry.turn );
+            jsout.member( "char" );
+            jsout.write_separator();
+            fout << entry.json;
+            jsout.set_need_separator();
+            jsout.end_object();
+        }
+        jsout.end_array();
+        jsout.end_object();
+    }, _( "co-op players" ) );
+}
+
+// Copies a player's character into the store (unless the store has a newer
+// copy, taken after the world was last saved).
+void store_player( const npc &guy )
+{
+    const std::string name = guy.get_value( "coop_player" );
+    if( name.empty() || guy.is_dead() ) {
+        return;
+    }
+    load_stored_players();
+    stored_player &slot = stored_players[name];
+    const int now = to_turn<int>( calendar::turn );
+    if( slot.json.empty() || slot.turn <= now ) {
+        slot.json = write_json( [&guy]( JsonOut & jsout ) {
+            guy.serialize( jsout );
+        } );
+        slot.turn = now;
+    }
+}
+
+// Takes the character of a player who is not playing out of the world.
+void stash_proxy( const character_id &id )
+{
+    overmapbuffer &omb = get_overmapbuffer( get_avatar().get_dimension() );
+    // Keeps the character alive while it is taken out.
+    const shared_ptr_fast<npc> guy = omb.find_npc( id );
+    if( !guy ) {
+        return;
+    }
+    store_player( *guy );
+    const bool active = std::ranges::any_of( g->all_npcs(), [&id]( const npc & n ) {
+        return n.getID() == id;
+    } );
+    if( active ) {
+        g->erase_npc( id );
+    }
+    omb.remove_npc( id );
+    save_stored_players();
+    log( string_format( "stored the character of %s", guy->get_value( "coop_player" ) ) );
+}
+
+// Every character of a player who is not playing goes into the store.
+void stash_offline_proxies()
+{
+    std::vector<character_id> offline;
+    for( npc &guy : g->all_npcs() ) {
+        if( is_proxy( guy ) && !guy.is_dead() && peer_of_proxy( guy.getID() ) == nullptr ) {
+            offline.push_back( guy.getID() );
+        }
+    }
+    for( const character_id &id : offline ) {
+        stash_proxy( id );
+    }
+}
+
+// A copy of everybody who is playing, in case the host never saves.
+void snapshot_online_players()
+{
+    for( const auto &[id, p] : peers ) {
+        if( const npc *guy = p.joined ? proxy_of( p ) : nullptr ) {
+            store_player( *guy );
+        }
+    }
+    save_stored_players();
+}
+
+std::vector<std::string> stored_player_names()
+{
+    load_stored_players();
+    std::vector<std::string> names;
+    for( const auto &[name, entry] : stored_players ) {
+        names.push_back( name );
+    }
+    return names;
+}
+
+npc *create_proxy( JsonIn &char_json, const std::string &player_name );
+
+// Brings a stored character back, next to the host.
+npc *restore_stored_proxy( const std::string &player_name )
+{
+    load_stored_players();
+    const auto it = stored_players.find( player_name );
+    if( it == stored_players.end() ) {
+        return nullptr;
+    }
+    npc *guy = nullptr;
+    try {
+        std::istringstream is( it->second.json );
+        JsonIn jsin( is );
+        guy = create_proxy( jsin, player_name );
+    } catch( const std::exception &e ) {
+        log( std::string( "restoring a stored character failed: " ) + e.what() );
+        return nullptr;
+    }
+    if( guy != nullptr ) {
+        stored_players.erase( it );
+        save_stored_players();
+    }
+    return guy;
+}
+
 // Finds the proxy of `player_name`, bringing it into the reality bubble next to
 // the host if it was stored on the overmap.  Returns nullptr if unknown.
 npc *activate_existing_proxy( const std::string &player_name )
@@ -307,6 +491,9 @@ npc *activate_existing_proxy( const std::string &player_name )
             }
             return &guy;
         }
+    }
+    if( npc *restored = restore_stored_proxy( player_name ) ) {
+        return restored;
     }
     overmapbuffer &omb = get_overmapbuffer( get_avatar().get_dimension() );
     for( const shared_ptr_fast<npc> &stored : omb.get_overmap_npcs() ) {
@@ -440,6 +627,16 @@ std::string build_state( peer_t &p, sync_level level, broadcast_cache &cache )
     }
     const tripoint_abs_ms center = u.abs_pos();
     out += string_format( ",\"center\":[%d,%d,%d]", center.x(), center.y(), center.z() );
+    // Whose turn it is, and who plays (the host first).
+    out += ",\"acting\":" + json_quote( acting_name.empty() ? host_name() : acting_name );
+    out += ",\"players\":" + write_json( []( JsonOut & jsout ) {
+        jsout.start_array();
+        jsout.write( host_name() );
+        for( const std::string &name : joined_names() ) {
+            jsout.write( name );
+        }
+        jsout.end_array();
+    } );
 
     // ---- own character
     {
@@ -2457,6 +2654,8 @@ bool start_listening( std::string &err )
 
 void stop( const std::string &reason )
 {
+    // The players' characters are kept however the host's game ends.
+    snapshot_online_players();
     for( auto &[id, p] : peers ) {
         send( id, "{\"t\":\"bye\",\"msg\":" + json_quote( reason ) + "}" );
         if( p.joined ) {
@@ -2626,7 +2825,8 @@ std::string status_line()
         list += list.empty() ? "" : ", ";
         list += n;
     }
-    return string_format( _( "Co-op: hosting on port %d.  Players: %s" ), net::host_port(), list );
+    return string_format( _( "Co-op: hosting on port %d.  Players (%d): %s" ), net::host_port(),
+                          static_cast<int>( names.size() ), list );
 }
 
 } // namespace cata_mp::host
@@ -2649,10 +2849,28 @@ void host_after_player_action()
 
 void host_end_of_turn()
 {
+    if( is_client() ) {
+        return;
+    }
+    // The characters of players who left (or of a co-op world played alone)
+    // are taken out of the world until their players come back.
+    host::stash_offline_proxies();
     if( !is_host() ) {
         return;
     }
     pump();
+    // Now and then a copy of everybody who plays, in case the host never
+    // saves (or crashes).
+    static int64_t last_snapshot = net::now_ms();
+    if( net::now_ms() - last_snapshot > 60 * 1000 ) {
+        last_snapshot = net::now_ms();
+        host::snapshot_online_players();
+    }
+    // The other players have taken their turns: it is the host's again.
+    if( host::acting_name != host::host_name() ) {
+        host::acting_name = host::host_name();
+        host::broadcast( host::sync_level::light );
+    }
     // While time runs fast (waiting, long activities) a full broadcast every
     // turn would flood the clients.  Skipping some is safe: every broadcast
     // sends whatever differs from what each client last received.
@@ -2753,6 +2971,7 @@ bool host_proxy_turn( npc &guy )
             break;
         }
         if( !p->action ) {
+            host::acting_name = p->name;
             host::broadcast( host::sync_level::normal );
             if( !p->turn_announced ) {
                 host::send( peer_id, "{\"t\":\"turn\"}" );
@@ -2819,6 +3038,11 @@ void host_proxy_died( const npc &guy )
         return;
     }
     add_msg( m_bad, _( "Co-op: %s has died." ), p->name );
+    // No older copy of the character may bring it back.
+    host::load_stored_players();
+    if( host::stored_players.erase( p->name ) > 0 ) {
+        host::save_stored_players();
+    }
     host::send( p->id, "{\"t\":\"died\"}" );
     p->joined = false;
     net::host_close_peer( p->id );

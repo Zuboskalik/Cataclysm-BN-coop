@@ -127,6 +127,9 @@ struct state_t {
     std::string password;
     std::string my_name;
     std::string host_name;
+    // Whose turn it is, and everybody in the session (the host first).
+    std::string acting;
+    std::vector<std::string> players;
     bool in_game = false;
     bool my_turn = false;
     bool awaiting_ack = false;
@@ -437,6 +440,12 @@ void apply_state( message &m )
     map &here = get_map();
     const int old_z = u.abs_pos().z();
 
+    if( jo.has_string( "acting" ) ) {
+        S.acting = jo.get_string( "acting" );
+    }
+    if( jo.has_array( "players" ) ) {
+        jo.read( "players", S.players );
+    }
     if( jo.has_int( "turn" ) ) {
         const time_point turn = time_point::from_turn( jo.get_int( "turn" ) );
         if( turn != calendar::turn ) {
@@ -1756,7 +1765,9 @@ void update_waiting_notice()
     }
     const int secs = S.turn_wait_started > 0 ?
                      static_cast<int>( ( net::now_ms() - S.turn_wait_started ) / 1000 ) : 0;
-    waiting_notice->message( _( "Waiting for %s to act… (%d s)" ), S.host_name, secs );
+    // With more players it may be another remote player's turn.
+    const std::string &acting = S.acting.empty() || S.acting == S.my_name ? S.host_name : S.acting;
+    waiting_notice->message( _( "Waiting for %s to act… (%d s)" ), acting, secs );
 }
 
 void flush_placeholders()
@@ -1810,10 +1821,17 @@ std::string status_line()
     } else if( S.awaiting_ack ) {
         turn = colorize( _( "ACTING…" ), c_yellow );
     } else {
-        turn = colorize( string_format( _( "%s'S TURN" ), S.host_name ), c_light_red );
+        const std::string &acting = S.acting.empty() || S.acting == S.my_name ? S.host_name : S.acting;
+        turn = colorize( string_format( _( "%s'S TURN" ), acting ), c_light_red );
     }
-    return string_format( _( "%s  Co-op: connected to %s (%s:%d), ping %s" ), turn, S.host_name,
-                          S.address, S.port, rtt >= 0 ? string_format( "%d ms", rtt ) : std::string( "?" ) );
+    std::string players;
+    for( const std::string &name : S.players ) {
+        players += players.empty() ? "" : ", ";
+        players += name;
+    }
+    return string_format( _( "%s  Co-op: connected to %s (%s:%d), ping %s.  Players (%d): %s" ), turn,
+                          S.host_name, S.address, S.port, rtt >= 0 ? string_format( "%d ms", rtt ) : std::string( "?" ),
+                          static_cast<int>( S.players.size() ), players );
 }
 
 void leave_session( bool ask )

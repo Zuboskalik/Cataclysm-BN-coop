@@ -3268,6 +3268,11 @@ void npc::process_turn()
 
 auto npc::action_move_factor() const -> int
 {
+    // Co-op: a remote player's character acts at the players' rate, so every
+    // player gets as many turns as the host.
+    if( cata_mp::is_proxy( *this ) ) {
+        return action_time_scale::player_tick_action_factor();
+    }
     return action_time_scale::npc_tick_action_factor();
 }
 

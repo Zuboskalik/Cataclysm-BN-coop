@@ -11,6 +11,7 @@
 #include "mission.h"
 #include "monster.h"
 #include "mp_common.h"
+#include "mp_session.h"
 #include "npc.h"
 #include "player_helpers.h"
 #include "state_helpers.h"
@@ -94,4 +95,46 @@ TEST_CASE("which way a creature looks survives serialization", "[coop][monster]"
     copy.deserialize(jsin);
 
     CHECK(copy.facing == FD_LEFT);
+}
+
+TEST_CASE("a player who leaves is taken out of the world and comes back", "[coop][drop_in]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto name = std::string("Drop In Tester");
+    const auto proxies_named = [&name]() {
+        auto count = 0;
+        for (const npc& guy : g->all_npcs()) {
+            count += guy.get_value("coop_player") == name ? 1 : 0;
+        }
+        return count;
+    };
+    const auto probe =
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+        + "}";
+    const auto join = [&](const std::string& character) {
+        return R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character
+             + "}";
+    };
+
+    // A new character joins.
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(901, "test");
+    cata_mp::host::handle_line(901, probe);
+    cata_mp::host::handle_line(901, join(character));
+    REQUIRE(proxies_named() == 1);
+
+    // It leaves: at the end of the turn its character is gone from the world.
+    cata_mp::host::handle_closed(901, "test over");
+    cata_mp::host_end_of_turn();
+    CHECK(proxies_named() == 0);
+
+    // It joins again and continues the same character, next to the host.
+    cata_mp::host::handle_opened(902, "test");
+    cata_mp::host::handle_line(902, probe);
+    cata_mp::host::handle_line(902, join("null"));
+    CHECK(proxies_named() == 1);
+
+    cata_mp::host::handle_closed(902, "test over");
+    cata_mp::host_end_of_turn();
+    CHECK(proxies_named() == 0);
 }
