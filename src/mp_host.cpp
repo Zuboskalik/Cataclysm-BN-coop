@@ -143,6 +143,9 @@ struct peer_t {
     std::optional<std::pair<distraction_type, std::string>> distraction;
     // Hostiles the character saw last turn (a new one interrupts).
     int seen_hostiles = 0;
+    // A hostile came into view since the player's last action: like the
+    // player's safe mode, it stops a walk to a clicked spot.
+    std::optional<std::string> spotted;
 
     // What this client already has, by content hash.
     std::map<tripoint_abs_sm, size_t> sm_sent;
@@ -1159,6 +1162,33 @@ action_result do_move( npc &guy, int dx, int dy )
         guy.burn_move_stamina( moves_before - guy.get_moves() );
     }
     return action_result{};
+}
+
+// A step of a walk to a clicked spot stops where the player's would: at a
+// creature in the way (instead of attacking or pushing past it) and when a
+// hostile comes into view.
+bool auto_move_stopped( npc &guy, const peer_t &p, const tripoint_bub_ms &dest )
+{
+    if( p.spotted ) {
+        guy.add_msg_if_player( m_warning, *p.spotted );
+        guy.add_msg_if_player( m_warning, _( "Auto-move canceled." ) );
+        return true;
+    }
+    Creature *critter = g->critter_at( dest );
+    if( critter == nullptr || critter == &guy ) {
+        return false;
+    }
+    if( const monster *mon = critter->as_monster() ) {
+        if( mon->friendly != 0 || mon->is_pet() || mon->attitude( &guy ) == MATT_FRIEND ) {
+            return false;
+        }
+        guy.add_msg_if_player( m_warning, _( "Monster in the way.  Auto-move canceled." ) );
+        guy.add_msg_if_player( m_info, _( "Move into the monster to attack." ) );
+        return true;
+    }
+    guy.add_msg_if_player( _( "NPC in the way, Auto-move canceled." ) );
+    guy.add_msg_if_player( m_info, _( "Move into the NPC to interact or attack." ) );
+    return true;
 }
 
 action_result do_vertical_move( npc &guy, int dz )
@@ -2373,6 +2403,13 @@ action_result execute( peer_t &p, npc &guy, message &m )
     JsonObject jo = m.object();
     const std::string a = jo.get_string( "a", "" );
     if( a == "move" ) {
+        if( jo.get_bool( "auto", false ) ) {
+            const tripoint_bub_ms dest = guy.bub_pos() + tripoint_rel_ms( jo.get_int( "dx", 0 ),
+                                         jo.get_int( "dy", 0 ), 0 );
+            if( auto_move_stopped( guy, p, dest ) ) {
+                return fail( std::string() );
+            }
+        }
         return do_move( guy, jo.get_int( "dx", 0 ), jo.get_int( "dy", 0 ) );
     }
     if( a == "vmove" ) {
@@ -2545,6 +2582,11 @@ void watch_for_distractions( npc &guy, peer_t &p )
         return seen;
     }();
     const int seen = static_cast<int>( hostiles.size() );
+    if( seen > p.seen_hostiles ) {
+        p.spotted = seen - p.seen_hostiles == 1 ?
+                    string_format( _( "%s spotted!" ), hostiles.back()->get_name() ) :
+                    std::string( _( "Monsters spotted!" ) );
+    }
     const bool busy = guy.activity && *guy.activity && guy.activity->id() != activity_id( "ACT_AIM" );
     if( busy && !p.distraction ) {
         const auto close = std::ranges::find_if( hostiles, [&guy]( const Creature * c ) {
@@ -2684,6 +2726,35 @@ bool wait_for_action( int peer_id )
             }
         }
     }
+}
+
+// Runs one action the player sent for their character and tells them how it
+// went.
+void run_action( peer_t &p, npc &guy, const std::string &line )
+{
+    message m( line );
+    const int peer_id = p.id;
+    int seq = 0;
+    const int moves_before_action = guy.get_moves();
+    action_result result;
+    try {
+        JsonObject jo = m.object();
+        seq = jo.get_int( "seq", 0 );
+        prompt_scope questions( peer_id );
+        result = execute( p, guy, m );
+    } catch( const std::exception &e ) {
+        log( std::string( "action failed: " ) + e.what() );
+        result = fail( _( "The host could not process that action." ) );
+    }
+    // What came into view so far is known to the player once they acted.
+    p.spotted.reset();
+    if( !result.ok && !result.msg.empty() ) {
+        send_to_player( p, m_info, result.msg );
+    }
+    broadcast( sync_level::normal );
+    // Moves the action took: the sidebar's move counter, like the player's.
+    send( peer_id, string_format( "{\"t\":\"ack\",\"seq\":%d,\"ok\":%s,\"spent\":%d}", seq,
+                                    result.ok ? "true" : "false", std::max( 0, moves_before_action - guy.get_moves() ) ) );
 }
 
 } // namespace
@@ -2837,6 +2908,17 @@ void broadcast_chat( const std::string &from, const std::string &text )
             send( id, "{\"t\":\"chat\",\"text\":" + json_quote( line ) + "}" );
         }
     }
+}
+
+bool perform_action( const int peer, const std::string &line )
+{
+    peer_t *p = find_peer( peer );
+    npc *guy = p != nullptr ? proxy_of( *p ) : nullptr;
+    if( guy == nullptr ) {
+        return false;
+    }
+    run_action( *p, *guy, line );
+    return true;
 }
 
 int joined_count()
@@ -3054,28 +3136,10 @@ bool host_proxy_turn( npc &guy )
                 break;
             }
         }
-        message m( *p->action );
+        const std::string line = *p->action;
         p->action.reset();
         p->turn_announced = false;
-        int seq = 0;
-        const int moves_before_action = guy.get_moves();
-        host::action_result result;
-        try {
-            JsonObject jo = m.object();
-            seq = jo.get_int( "seq", 0 );
-            host::prompt_scope questions( peer_id );
-            result = host::execute( *p, guy, m );
-        } catch( const std::exception &e ) {
-            log( std::string( "action failed: " ) + e.what() );
-            result = host::fail( _( "The host could not process that action." ) );
-        }
-        if( !result.ok && !result.msg.empty() ) {
-            host::send_to_player( *p, m_info, result.msg );
-        }
-        host::broadcast( host::sync_level::normal );
-        // Moves the action took: the sidebar's move counter, like the player's.
-        host::send( peer_id, string_format( "{\"t\":\"ack\",\"seq\":%d,\"ok\":%s,\"spent\":%d}", seq,
-                                            result.ok ? "true" : "false", std::max( 0, moves_before_action - guy.get_moves() ) ) );
+        host::run_action( *p, guy, line );
     }
     return true;
 }

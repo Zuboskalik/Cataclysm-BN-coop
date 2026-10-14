@@ -124,6 +124,12 @@ struct welcome_info {
     std::vector<std::string> players;
 };
 
+/// One step of a walk to a clicked spot, where it starts and where it goes.
+struct auto_step {
+    tripoint_abs_ms from;
+    tripoint_abs_ms to;
+};
+
 struct state_t {
     std::string address;
     uint16_t port = default_port;
@@ -153,6 +159,8 @@ struct state_t {
     std::vector<int> missions_completed;
     std::vector<int> missions_failed;
     int mission_current = -1;
+    // The step of a walk to a clicked spot the host is taking for us.
+    std::optional<auto_step> walking;
 };
 
 state_t S;
@@ -1781,6 +1789,36 @@ void answer_question( message &m )
     g->invalidate_main_ui_adaptor();
 }
 
+// After the host took a step of our walk to a clicked spot (our copy of the
+// character is up to date by then), go on the way the player's walk does.
+void finish_walking_step( const bool ok )
+{
+    if( !S.walking ) {
+        return;
+    }
+    const auto step = *S.walking;
+    S.walking.reset();
+    avatar &u = get_avatar();
+    if( !ok ) {
+        // The step failed (the host said why): the walk ends.
+        u.clear_destination();
+        return;
+    }
+    if( u.abs_pos() == step.to ) {
+        return;
+    }
+    if( u.abs_pos() == step.from ) {
+        // A door opened in the way: step through it next.
+        auto route = u.get_auto_move_route();
+        route.insert( route.begin(), abs_to_bub( step.to ) );
+        u.set_destination( route );
+        return;
+    }
+    // We're off course, possibly stumbling or stuck.
+    add_msg( m_info, _( "Auto-move canceled" ) );
+    u.clear_destination();
+}
+
 void handle_line( const std::string &line )
 {
     message m( line );
@@ -1800,6 +1838,7 @@ void handle_line( const std::string &line )
     } else if( t == "ack" ) {
         S.awaiting_ack = false;
         get_avatar().movecounter = m.object().get_int( "spent", 0 );
+        finish_walking_step( m.object().get_bool( "ok", true ) );
         S.turn_wait_started = net::now_ms();
     } else if( t == "chat" ) {
         JsonObject jo = m.object();
@@ -2246,7 +2285,14 @@ bool client_intercept_action( action_id act,
                 return true;
             }
             const point_rel_ms d = get_delta_from_movement_action( act, iso_rotate::yes );
-            client::send_action( "move", string_format( ",\"dx\":%d,\"dy\":%d", d.x(), d.y() ) );
+            // A step of a walk to a clicked spot: the host stops it where the
+            // player's would stop.
+            const bool walking = u.is_auto_moving();
+            client::S.walking = walking ? std::optional<client::auto_step>( client::auto_step{
+                .from = u.abs_pos(),
+                .to = u.abs_pos() + tripoint_rel_ms( d.x(), d.y(), 0 ) } ) : std::nullopt;
+            client::send_action( "move", string_format( ",\"dx\":%d,\"dy\":%d%s", d.x(), d.y(),
+                                 walking ? ",\"auto\":true" : "" ) );
             return true;
         }
         case ACTION_CONTROL_VEHICLE:

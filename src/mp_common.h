@@ -115,6 +115,8 @@ void handle_closed( int peer, const std::string &reason );
 void broadcast_chat( const std::string &from, const std::string &text );
 int joined_count();
 std::vector<std::string> joined_names();
+// Runs an action message of a joined player now, as on their turn.
+bool perform_action( int peer, const std::string &line );
 void kick_menu();
 std::string status_line();
 } // namespace host

@@ -211,3 +211,39 @@ TEST_CASE("the host running leaves an idle remote player's stamina alone", "[coo
     cata_mp::host_end_of_turn();
 }
 
+TEST_CASE("a remote player's walk to a clicked spot stops at a monster in the way", "[coop][auto_move]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    get_avatar().setpos(tripoint_bub_ms{50, 50, 0});
+    const auto name = std::string("Walker");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(940, "test");
+    cata_mp::host::handle_line(
+        940,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        940, R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+    npc* walker = nullptr;
+    for (npc& guy : g->all_npcs()) {
+        if (guy.get_value("coop_player") == name) { walker = &guy; }
+    }
+    REQUIRE(walker != nullptr);
+    walker->setpos(tripoint_bub_ms{60, 60, 0});
+    const auto start = walker->bub_pos();
+    spawn_test_monster("mon_zombie", start + tripoint_rel_ms::east());
+    walker->set_moves(100);
+
+    SECTION("a step of the walk does not attack") {
+        REQUIRE(cata_mp::host::perform_action(940, R"({"t":"act","seq":1,"a":"move","dx":1,"dy":0,"auto":true})"));
+        CHECK(walker->get_moves() == 100);
+        CHECK(walker->bub_pos() == start);
+    }
+    SECTION("a step of the player's own attacks") {
+        REQUIRE(cata_mp::host::perform_action(940, R"({"t":"act","seq":1,"a":"move","dx":1,"dy":0})"));
+        CHECK(walker->get_moves() < 100);
+    }
+
+    cata_mp::host::handle_closed(940, "test over");
+    cata_mp::host_end_of_turn();
+}
