@@ -2289,7 +2289,8 @@ auto vehicle::merge_rackable_vehicle(vehicle* carry_veh, const std::vector<int>&
         zones_dirty = true;
 
         //~ %1$s is the vehicle being loaded onto the bicycle rack
-        add_msg(_("You load the %1$s on the rack"), carry_veh->name);
+        cata_mp::acting_player().add_msg_if_player(
+            _("You load the %1$s on the rack"), carry_veh->name);
         map& here = get_map();
         carry_veh->part_removal_cleanup();
         here.dirty_vehicle_list.insert(this);
@@ -2299,7 +2300,8 @@ auto vehicle::merge_rackable_vehicle(vehicle* carry_veh, const std::vector<int>&
         refresh();
     } else {
         //~ %1$s is the vehicle being loaded onto the bicycle rack
-        add_msg(m_bad, _("You can't get the %1$s on the rack"), carry_veh->name);
+        cata_mp::acting_player().add_msg_if_player(
+            m_bad, _("You can't get the %1$s on the rack"), carry_veh->name);
     }
     return found_all_parts;
 }
@@ -2586,7 +2588,8 @@ auto vehicle::remove_carried_vehicle(const std::vector<int>& carried_parts) -> b
     const bool success = split_vehicles(carried_vehicles, new_vehicles, carried_mounts);
     if (success) {
         //~ %s is the vehicle being loaded onto the bicycle rack
-        add_msg(_("You unload the %s from the bike rack."), new_vehicle->name);
+        cata_mp::acting_player().add_msg_if_player(
+            _("You unload the %s from the bike rack."), new_vehicle->name);
         new_vehicle->remove_carried_flag();
         if (tracked_parts) {
             new_vehicle->toggle_tracking();     // turn on tracking for our newly created vehicle
@@ -2597,7 +2600,8 @@ auto vehicle::remove_carried_vehicle(const std::vector<int>& carried_parts) -> b
         part_removal_cleanup();
     } else {
         //~ %s is the vehicle being loaded onto the bicycle rack
-        add_msg(m_bad, _("You can't unload the %s from the bike rack."), new_vehicle->name);
+        cata_mp::acting_player().add_msg_if_player(
+            m_bad, _("You can't unload the %s from the bike rack."), new_vehicle->name);
     }
     return success;
 }

@@ -1319,7 +1319,8 @@ void vehicle::honk_horn() {
 }
 
 void vehicle::reload_seeds(const tripoint_bub_ms& pos) {
-    player& p = g->u;
+    // Co-op: the player reloading may be a remote player's character.
+    player& p = cata_mp::acting_player();
 
     std::vector<item*> seed_inv = p.items_with([](const item& itm) { return itm.is_seed(); });
 
@@ -1746,7 +1747,8 @@ void vehicle::open_or_close(const int part_index, const bool opening) {
 void vehicle::use_monster_capture(int part, const tripoint_bub_ms& pos) {
     if (parts[part].is_broken() || parts[part].removed) { return; }
     item& base = parts[part].get_base();
-    base.type->invoke(g->u, base, pos);
+    // Co-op: the player using it may be a remote player's character.
+    base.type->invoke(cata_mp::acting_player(), base, pos);
     if (base.has_var("contained_name")) {
         parts[part].set_flag(vehicle_part::animal_flag);
     } else {
@@ -1757,8 +1759,10 @@ void vehicle::use_monster_capture(int part, const tripoint_bub_ms& pos) {
 
 void vehicle::use_harness(int part, const tripoint_bub_ms& pos) {
     if (parts[part].is_unavailable() || parts[part].removed) { return; }
+    // Co-op: the player using it may be a remote player's character.
+    player& you = cata_mp::acting_player();
     if (!g->is_empty(pos)) {
-        add_msg(m_info, _("The harness is blocked."));
+        you.add_msg_if_player(m_info, _("The harness is blocked."));
         return;
     }
     const std::function<bool(const tripoint_bub_ms&)> f = [](const tripoint_bub_ms& pnt) {
@@ -1773,36 +1777,37 @@ void vehicle::use_harness(int part, const tripoint_bub_ms& pos) {
         _("Where is the creature to harness?"), _("There is no creature to harness nearby."), f,
         false);
     if (!pnt_) {
-        add_msg(m_info, _("Never mind."));
+        you.add_msg_if_player(m_info, _("Never mind."));
         return;
     }
     const tripoint_bub_ms& target = *pnt_;
     monster* mon_ptr = g->critter_at<monster>(target);
     if (mon_ptr == nullptr) {
-        add_msg(m_info, _("No creature there."));
+        you.add_msg_if_player(m_info, _("No creature there."));
         return;
     }
     monster& m = *mon_ptr;
     std::string Harness_Bodytype = "HARNESS_" + m.type->bodytype;
     if (m.friendly == 0) {
-        add_msg(m_info, _("This creature is not friendly!"));
+        you.add_msg_if_player(m_info, _("This creature is not friendly!"));
         return;
     } else if (!m.has_flag(MF_PET_MOUNTABLE) && !m.has_flag(MF_PET_HARNESSABLE)) {
-        add_msg(m_info, _("This creature cannot be harnessed."));
+        you.add_msg_if_player(m_info, _("This creature cannot be harnessed."));
         return;
     } else if (!part_flag(part, Harness_Bodytype) && !part_flag(part, "HARNESS_any")) {
-        add_msg(m_info, _("The harness is not adapted for this creature morphology."));
+        you.add_msg_if_player(
+            m_info, _("The harness is not adapted for this creature morphology."));
         return;
     }
 
     m.add_effect(effect_harnessed, 1_turns, bodypart_str_id::NULL_ID());
     m.setpos(pos);
     //~ %1$s: monster name, %2$s: vehicle name
-    add_msg(m_info, _("You harness your %1$s to %2$s."), m.get_name(), disp_name());
+    you.add_msg_if_player(m_info, _("You harness your %1$s to %2$s."), m.get_name(), disp_name());
     if (m.has_effect(effect_tied)) {
-        add_msg(m_info, _("You untie your %s."), m.get_name());
+        you.add_msg_if_player(m_info, _("You untie your %s."), m.get_name());
         m.remove_effect(effect_tied);
-        g->u.i_add(m.remove_tied_item());
+        you.i_add(m.remove_tied_item());
     }
 }
 
@@ -2057,12 +2062,6 @@ void vehicle::interact_with(const tripoint_bub_ms& pos, int interact_part, Chara
                     return;
                 }
                 break;
-            case USE_BIKE_RACK:
-            case USE_HARNESS:
-            case USE_MONSTER_CAPTURE:
-            case RELOAD_PLANTER:
-                you.add_msg_if_player(m_info, _("That is not available in co-op yet."));
-                return;
             default:
                 break;
         }
