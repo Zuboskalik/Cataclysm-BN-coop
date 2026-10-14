@@ -138,3 +138,29 @@ TEST_CASE("a player who leaves is taken out of the world and comes back", "[coop
     cata_mp::host_end_of_turn();
     CHECK(proxies_named() == 0);
 }
+
+TEST_CASE("three remote players can join at once", "[coop][drop_in]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto probe =
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+        + "}";
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    const auto names = std::vector<std::string>{"Party One", "Party Two", "Party Three"};
+    auto peer = 910;
+    for (const std::string& name : names) {
+        cata_mp::host::handle_opened(peer, "test");
+        cata_mp::host::handle_line(peer, probe);
+        cata_mp::host::handle_line(
+            peer,
+            R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+        ++peer;
+    }
+
+    CHECK(cata_mp::host::joined_count() == 3);
+    CHECK(cata_mp::party_members().size() == 4);
+
+    for (auto id = 910; id < peer; ++id) { cata_mp::host::handle_closed(id, "test over"); }
+    cata_mp::host_end_of_turn();
+    CHECK(cata_mp::party_members().size() == 1);
+}

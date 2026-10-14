@@ -22,8 +22,6 @@ namespace cata_mp
 // run the very same build (see protocol_version_string()).
 constexpr int protocol_version = 1;
 constexpr uint16_t default_port = 8080;
-// Remote players allowed at once (the host is the extra one).
-constexpr int max_remote_players = 3;
 
 enum class role : int {
     none,

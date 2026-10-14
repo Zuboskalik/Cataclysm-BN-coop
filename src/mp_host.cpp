@@ -568,8 +568,12 @@ size_t submap_content_hash( const std::string &json )
                                           std::string_view( json ).substr( pos ) );
 }
 
+// Shared by the states built in one broadcast: with several players each
+// creature is serialized once, not once per player.
 struct broadcast_cache {
     std::map<tripoint_abs_sm, std::pair<size_t, std::string>> submaps;
+    std::map<const monster *, std::pair<size_t, std::string>> monsters;
+    std::map<int, std::pair<size_t, std::string>> characters;
 };
 
 const std::pair<size_t, std::string> *cached_submap( broadcast_cache &cache,
@@ -665,10 +669,15 @@ std::string build_state( peer_t &p, sync_level level, broadcast_cache &cache )
                 continue;
             }
             const std::string key = std::to_string( reinterpret_cast<uintptr_t>( &critter ) );
-            std::string json = write_json( [&critter]( JsonOut & jsout ) {
-                critter.serialize( jsout );
-            } );
-            const size_t h = std::hash<std::string>()( json );
+            auto [cached, fresh] = cache.monsters.try_emplace( &critter );
+            if( fresh ) {
+                cached->second.second = write_json( [&critter]( JsonOut & jsout ) {
+                    critter.serialize( jsout );
+                } );
+                cached->second.first = std::hash<std::string>()( cached->second.second );
+            }
+            const std::string &json = cached->second.second;
+            const size_t h = cached->second.first;
             now[key] = h;
             const auto old = p.mon_sent.find( key );
             if( p.full_sync || old == p.mon_sent.end() || old->second != h ) {
@@ -704,8 +713,13 @@ std::string build_state( peer_t &p, sync_level level, broadcast_cache &cache )
         std::string keys;
         const auto consider = [&]( Character & who, const std::function<void( JsonOut & )> &writer ) {
             const int key = who.getID().get_value();
-            std::string json = write_json( writer );
-            const size_t h = std::hash<std::string>()( json );
+            auto [cached, fresh] = cache.characters.try_emplace( key );
+            if( fresh ) {
+                cached->second.second = write_json( writer );
+                cached->second.first = std::hash<std::string>()( cached->second.second );
+            }
+            const std::string &json = cached->second.second;
+            const size_t h = cached->second.first;
             now[key] = h;
             const auto old = p.npc_sent.find( key );
             if( p.full_sync || old == p.npc_sent.end() || old->second != h ) {
@@ -967,11 +981,6 @@ void handle_join( peer_t &p, message &m )
     std::string name = trim( jo.get_string( "name", "" ) );
     if( name.empty() ) {
         send_error( p.id, _( "No character name given." ) );
-        return;
-    }
-    if( joined_count() >= max_remote_players ) {
-        send_error( p.id, string_format( _( "The session is full (%d remote players)." ),
-                                         max_remote_players ) );
         return;
     }
     for( const auto &[id, other] : peers ) {

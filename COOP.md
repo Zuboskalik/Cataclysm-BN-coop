@@ -1,8 +1,8 @@
 # Co-op multiplayer for Cataclysm: Bright Nights
 
-Two to four players share one world over TCP. The design follows the CDDA
-co-op fork (busterbogheart/Cataclysm-DDA-multi), reimplemented on top of BN's
-own systems.
+Players share one world over TCP: the host and any number of remote players
+(tested with up to four players in all). Inspired by the CDDA co-op fork
+(busterbogheart/Cataclysm-DDA-multi), built on top of BN's own systems.
 
 ## Model
 
@@ -16,7 +16,8 @@ own systems.
   creatures and never saves. It mirrors what the host streams to it and sends
   every game action to the host.
 - **Lockstep.** The host takes its turn, then each remote player takes theirs
-  (the host shows "Waiting for X" and can skip a turn with Esc), then
+  one after another (the host shows "Waiting for X" and can skip a turn with
+  Esc; the other players see whose turn it is), then
   monsters move. Waiting (`|`) lets a remote player pass many turns at once;
   it stops when a hostile comes into view.
 - **Reality bubble.** Proxies must stay inside the host's reality bubble.

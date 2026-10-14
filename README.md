@@ -1,14 +1,13 @@
-# Cataclysm: Bright Nights CO-OP (port)
+# Cataclysm: Bright Nights CO-OP
 
 This is an unofficial fork of [Cataclysm: Bright Nights](https://github.com/cataclysmbn/Cataclysm-BN)
-that ports the two-player co-op multiplayer mod
-[Cataclysm-DDA-multi](https://github.com/busterbogheart/Cataclysm-DDA-multi)
-(made for Cataclysm: Dark Days Ahead) to Bright Nights.
+that adds co-op multiplayer for up to four players (or more). It was inspired by
+[Cataclysm-DDA-multi](https://github.com/busterbogheart/Cataclysm-DDA-multi), a co-op mod for the
+original Cataclysm: Dark Days Ahead.
 
-One player hosts a world, a second joins by IP address, and both play in the same world.
+One player hosts a world, the others join by IP address, and everybody plays in the same world.
 
-I am not an author of the game or of the original co-op mod; this repository only contains
-the port. It is a work in progress: expect bugs and missing features.
+I am not an author of the game. It is a work in progress: expect bugs and missing features.
 How it works: [COOP.md](./COOP.md).
 
 ## Download
@@ -18,7 +17,7 @@ Host and client must run the same build.
 
 ## Support
 
-[Boosty](https://boosty.to/zuboskalik/donate) or [donation](https://www.donationalerts.com/r/zuboskalikjet) — donations are just to support my work on the port,
+[Boosty](https://boosty.to/zuboskalik/donate) or [donation](https://www.donationalerts.com/r/zuboskalikjet) — donations are just to support my work on the co-op,
 not for the game itself. The game is free; all releases are free.
 
 ---
