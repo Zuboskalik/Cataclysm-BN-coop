@@ -318,16 +318,19 @@ void mission::step_complete( const int _step )
 
 void mission::wrap_up()
 {
-    auto &u = g->u;
-    if( u.getID() != player_id ) {
+    // Missions belong to the avatar; in co-op all players share them, and the
+    // one who turns it in hands over what it asked for.
+    avatar &owner = get_avatar();
+    player &u = cata_mp::acting_player();
+    if( owner.getID() != player_id ) {
         // This is called from npctalk.cpp, the npc should only offer the option to wrap up mission
         // that have been assigned to the current player.
         debugmsg( "mission::wrap_up called, player %d was assigned, but current player is %d",
-                  player_id.get_value(), u.getID().get_value() );
+                  player_id.get_value(), owner.getID().get_value() );
     }
 
     status = mission_status::success;
-    u.on_mission_finished( *this );
+    owner.on_mission_finished( *this );
     std::vector<item_comp> comps;
     switch( type->goal ) {
         case MGOAL_FIND_ITEM_GROUP: {
@@ -391,17 +394,23 @@ bool mission::is_complete( const character_id &_npc_id ) const
         return true;
     }
 
-    auto &u = g->u;
+    // Co-op: missions are shared.  What has to be handed over must be carried
+    // by the player turning the mission in; a place reached by any player
+    // counts.
+    player &u = cata_mp::acting_player();
+    const std::vector<player *> party = cata_mp::party_members();
     switch( type->goal ) {
         case MGOAL_GO_TO: {
-            const tripoint_abs_omt cur_pos = u.abs_omt_pos();
-            return ( rl_dist( cur_pos, target ) <= 1 );
+            return std::ranges::any_of( party, [this]( const player * who ) {
+                return rl_dist( who->abs_omt_pos(), target ) <= 1;
+            } );
         }
 
         case MGOAL_GO_TO_TYPE: {
-            const auto cur_ter = get_overmapbuffer( get_avatar().get_dimension() ).ter(
-                                     g->u.abs_omt_pos() );
-            return is_ot_match( type->target_id.str(), cur_ter, ot_match_type::type );
+            return std::ranges::any_of( party, [this]( const player * who ) {
+                const auto cur_ter = get_overmapbuffer( who->get_dimension() ).ter( who->abs_omt_pos() );
+                return is_ot_match( type->target_id.str(), cur_ter, ot_match_type::type );
+            } );
         }
 
         case MGOAL_FIND_ITEM_GROUP: {
@@ -497,7 +506,7 @@ bool mission::is_complete( const character_id &_npc_id ) const
             cc.beta = n;
 
             for( auto &mission : n->chatbin.missions_assigned ) {
-                if( mission->get_assigned_player_id() == g->u.getID() ) {
+                if( mission->get_assigned_player_id() == get_avatar().getID() ) {
                     cc.missions_assigned.push_back( mission );
                 }
             }

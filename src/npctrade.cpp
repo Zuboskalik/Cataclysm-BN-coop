@@ -6,6 +6,7 @@
 #include "item.h"
 #include "item_category.h"
 #include "map/map_selector.h"
+#include "mp_session.h"
 #include "npc.h"
 #include "player.h"
 #include "skill.h"
@@ -209,8 +210,10 @@ auto npc_trading::setup_trade_state( trade_state &state, int cost, npc &np ) -> 
     // Note that the NPC's barter skill is factored into these prices.
     // TODO: Recalc item values every time a new item is selected
     // Trading is not linear - starving NPC may pay $100 for 3 jerky, but not $100000 for 300 jerky
-    state.theirs = npc_trading::init_buying( g->u, np, true );
-    state.yours = npc_trading::init_buying( np, g->u, false );
+    // Co-op: the player trading may be a remote player's character.
+    player &you = cata_mp::acting_player();
+    state.theirs = npc_trading::init_buying( you, np, true );
+    state.yours = npc_trading::init_buying( np, you, false );
 
     if( np.will_exchange_items_freely() ) {
         state.your_balance = 0;
@@ -267,19 +270,21 @@ auto npc_trading::trade( npc &np, int cost, const std::string &deal ) -> bool
 
     auto state = trade_state{};
     npc_trading::setup_trade_state( state, cost, np );
-    auto trade_win = trading_window( state );
+    player &you = cata_mp::acting_player();
 
-    const auto traded = trade_win.perform_trade( np, deal );
+    const auto traded = cata_mp::remote_prompts_active() ?
+                        cata_mp::remote_trade( np, state, cost, deal ) :
+                        trading_window( state ).perform_trade( np, deal );
     if( traded ) {
         auto practice = 0;
 
-        npc_trading::transfer_items( state.yours, g->u, np, false );
-        npc_trading::transfer_items( state.theirs, np, g->u, true );
+        npc_trading::transfer_items( state.yours, you, np, false );
+        npc_trading::transfer_items( state.theirs, np, you, true );
 
         // NPCs will remember debts, to the limit that they'll extend credit or previous debts
         if( !np.will_exchange_items_freely() ) {
             npc_trading::update_npc_owed( state, np );
-            g->u.practice( skill_barter, practice / 10000 );
+            you.practice( skill_barter, practice / 10000 );
         }
     }
     return traded;

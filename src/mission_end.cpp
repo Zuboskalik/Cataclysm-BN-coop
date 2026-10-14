@@ -6,6 +6,7 @@
 #include "debug.h"
 #include "game.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "npc.h"
 #include "rng.h"
 #include "translations.h"
@@ -26,6 +27,8 @@ void mission_end::deposit_box( mission *miss )
     } else if( one_in( 3 ) ) {
         itemName = "m4a1";
     }
-    g->u.i_add( item::spawn( itemName, calendar::start_of_cataclysm ) );
-    add_msg( m_good, _( "%s gave you an item from the deposit box." ), p->name );
+    cata_mp::acting_player().i_add( item::spawn( itemName, calendar::start_of_cataclysm ) );
+    cata_mp::acting_player().add_msg_if_player( m_good,
+            _( "%s gave you an item from the deposit box." ),
+            p->name );
 }

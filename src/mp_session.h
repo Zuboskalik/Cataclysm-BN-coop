@@ -29,6 +29,11 @@ class monster;
 class npc;
 class player;
 class vehicle;
+struct talk_data;
+namespace npc_trading
+{
+struct trade_state;
+} // namespace npc_trading
 namespace pickup
 {
 struct pick_drop_selection;
@@ -158,6 +163,40 @@ bool client_request_construct( const std::string &id, const tripoint_bub_ms &pnt
 // is paid per shot.  False when `who` is not the character of the remote
 // player whose action is running (nothing was done then).
 bool proxy_fire_fake_gun( Character &who, item &fake_gun, int64_t cost_per_shot_joules );
+// The character whose action is running: on the host, while it runs a remote
+// player's action, that player's character; otherwise the avatar.  Code that
+// means "the player doing this" (conversations, trading) uses it.
+player &acting_player();
+// The characters of all players: the avatar and, on the host, every remote
+// player's character in the reality bubble.
+std::vector<player *> party_members();
+// Host: a message the remote players should see as well (shared missions).
+void share_message( int /* game_message_type */ type, const std::string &text );
+
+// ---- conversations ----------------------------------------------------------
+// The NPC said `challenge`; the remote player picks one of `responses` in a
+// conversation window like the player's.  `repeat`: the same question again
+// (the previous answer was taken back).
+struct remote_talk_request {
+    const std::string &npc_name;
+    const std::string &challenge;
+    const std::vector<talk_data> &responses;
+    bool repeat = false;
+};
+// The picked response, or one of the conversation's special keys (look at,
+// size up, yell, opinion).
+struct remote_talk_answer {
+    int index = -1;
+    char special = 0;
+};
+// Host: starts a new conversation window for the remote player.
+void remote_talk_begin();
+// nullopt: the player left.
+std::optional<remote_talk_answer> remote_talk( const remote_talk_request &req );
+// Host: the remote player trades with `np` in the trade window on their own
+// screen; their deal is applied to `state`.  False if they cancelled.
+bool remote_trade( npc &np, npc_trading::trade_state &state, int cost, const std::string &deal );
+
 // Host: features that skip turns in bulk would skip remote players' turns too.
 bool suppress_time_skipping();
 

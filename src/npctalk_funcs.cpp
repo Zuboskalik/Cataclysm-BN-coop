@@ -23,6 +23,7 @@
 #include "mission.h"
 #include "monster.h"
 #include "morale_types.h"
+#include "mp_session.h"
 #include "mutation.h"
 #include "npc.h"
 #include "npctalk.h" // IWYU pragma: associated
@@ -91,6 +92,17 @@ static const trait_id trait_NPC_STARTING_NPC( "NPC_STARTING_NPC" );
 struct itype;
 
 void spawn_animal( npc &p, const mtype_id &mon );
+
+namespace
+{
+
+/// The player in the conversation (in co-op, maybe a remote player's character).
+auto talker() -> player & // *NOPAD*
+{
+    return cata_mp::acting_player();
+}
+
+} // namespace
 
 void talk_function::nothing( npc & )
 {
@@ -321,7 +333,7 @@ void talk_function::goto_location( npc &p )
         return;
     }
     if( index == 1 ) {
-        destination = g->u.abs_omt_pos();
+        destination = talker().abs_omt_pos();
     }
     p.goal = destination;
     p.omt_path = get_overmapbuffer( p.get_dimension() ).get_travel_path(
@@ -391,11 +403,21 @@ void talk_function::wake_up( npc &p )
 
 void talk_function::control_npc( npc &p )
 {
+    if( !talker().is_avatar() ) {
+        // Co-op: only the host can take control of an NPC.
+        talker().add_msg_if_player( m_info, _( "Only the host can take control of %s." ), p.get_name() );
+        return;
+    }
     get_avatar().control_npc( p );
 }
 
 void talk_function::reveal_stats( npc &p )
 {
+    if( !talker().is_avatar() ) {
+        // Co-op: the stats screen can't be shown on a remote player's screen.
+        talker().add_msg_if_player( m_info, _( "%s shows you their stats." ), p.get_name() );
+        return;
+    }
     character_display::disp_info( p );
 }
 
@@ -414,7 +436,7 @@ void talk_function::insult_combat( npc &p )
 
 void talk_function::bionic_install( npc &p )
 {
-    item *bionic = game_menus::inv::install_bionic( g->u, g->u, true );
+    item *bionic = game_menus::inv::install_bionic( talker(), talker(), true );
 
     if( !bionic ) {
         return;
@@ -429,15 +451,15 @@ void talk_function::bionic_install( npc &p )
     }
 
     //Makes the doctor awesome at installing but not perfect
-    if( g->u.can_install_bionics( it, p, false, 20 ) ) {
+    if( talker().can_install_bionics( it, p, false, 20 ) ) {
         bionic->detach();
-        g->u.install_bionics( it, p, false, 20 );
+        talker().install_bionics( it, p, false, 20 );
     }
 }
 
 void talk_function::bionic_remove( npc &p )
 {
-    const bionic_collection all_bio = *g->u.my_bionics;
+    const bionic_collection all_bio = *talker().my_bionics;
     if( all_bio.empty() ) {
         popup( _( "You don't have any bionics installed…" ) );
         return;
@@ -477,9 +499,10 @@ void talk_function::bionic_remove( npc &p )
     }
 
     //Makes the doctor awesome at installing but not perfect
-    if( g->u.can_uninstall_bionic( bionic_id( bionic_types[bionic_index].str() ), p, false ) ) {
-        g->u.amount_of( bionic_types[bionic_index] ); // ??? this does nothing, it just queries the count
-        g->u.uninstall_bionic( bionic_id( bionic_types[bionic_index].str() ), p, false );
+    if( talker().can_uninstall_bionic( bionic_id( bionic_types[bionic_index].str() ), p, false ) ) {
+        talker().amount_of(
+            bionic_types[bionic_index] ); // ??? this does nothing, it just queries the count
+        talker().uninstall_bionic( bionic_id( bionic_types[bionic_index].str() ), p, false );
     }
 
 }
@@ -493,9 +516,9 @@ void talk_function::give_equipment( npc &p )
     }
     const int chosen = rng( 0, giving.size() - 1 );
     item &it = *giving[chosen].locs.front();
-    it.set_owner( g->u );
+    it.set_owner( talker() );
     popup( _( "%1$s gives you a %2$s" ), p.name, it.tname() );
-    g->u.i_add( giving[chosen].locs.front()->detach() );
+    talker().i_add( giving[chosen].locs.front()->detach() );
     p.op_of_u.owed -= giving[chosen].price;
     p.add_effect( effect_asked_for_item, 3_hours );
 }
@@ -519,9 +542,9 @@ static void give_aid_to( Character &guy )
 
 void talk_function::give_aid( npc &p )
 {
-    Character &u = get_player_character();
+    Character &u = talker();
 
-    give_aid_to( get_player_character() );
+    give_aid_to( talker() );
 
     p.add_effect( effect_currently_busy, 30_minutes );
     const int moves = to_moves<int>( 30_minutes );
@@ -531,9 +554,9 @@ void talk_function::give_aid( npc &p )
 
 void talk_function::give_all_aid( npc &p )
 {
-    Character &u = get_player_character();
+    Character &u = talker();
 
-    give_aid_to( get_player_character() );
+    give_aid_to( talker() );
     for( npc &guy : g->all_npcs() ) {
         if( guy.is_walking_with() && rl_dist( guy.bub_pos(), u.bub_pos() ) < PICKUP_RANGE ) {
             give_aid_to( guy );
@@ -561,7 +584,7 @@ static void generic_barber( const std::string &mut_type )
     std::vector<trait_id> hair_muts = get_mutations_in_type( mut_type );
     trait_id cur_hair;
     for( auto elem : hair_muts ) {
-        if( g->u.has_trait( elem ) ) {
+        if( talker().has_trait( elem ) ) {
             cur_hair = elem;
         }
         index += 1;
@@ -570,10 +593,10 @@ static void generic_barber( const std::string &mut_type )
     hair_menu.query();
     int choice = hair_menu.ret;
     if( choice != 0 ) {
-        if( g->u.has_trait( cur_hair ) ) {
-            g->u.remove_mutation( cur_hair, true );
+        if( talker().has_trait( cur_hair ) ) {
+            talker().remove_mutation( cur_hair, true );
         }
-        g->u.set_mutation( hair_muts[ choice - 1 ] );
+        talker().set_mutation( hair_muts[ choice - 1 ] );
         add_msg( m_info, _( "You get a trendy new cut!" ) );
     }
 }
@@ -590,35 +613,35 @@ void talk_function::barber_hair( npc &/*p*/ )
 
 void talk_function::buy_haircut( npc &p )
 {
-    g->u.add_morale( MORALE_HAIRCUT, 5, 5, 720_minutes, 3_minutes );
+    talker().add_morale( MORALE_HAIRCUT, 5, 5, 720_minutes, 3_minutes );
     const int moves = to_moves<int>( 20_minutes );
-    g->u.assign_activity( ACT_WAIT_NPC, moves );
-    g->u.activity->str_values.push_back( p.name );
+    talker().assign_activity( ACT_WAIT_NPC, moves );
+    talker().activity->str_values.push_back( p.name );
     add_msg( m_good, _( "%s gives you a decent haircut…" ), p.name );
 }
 
 void talk_function::buy_shave( npc &p )
 {
-    g->u.add_morale( MORALE_SHAVE, 10, 10, 360_minutes, 3_minutes );
+    talker().add_morale( MORALE_SHAVE, 10, 10, 360_minutes, 3_minutes );
     const int moves = to_moves<int>( 5_minutes );
-    g->u.assign_activity( ACT_WAIT_NPC, moves );
-    g->u.activity->str_values.push_back( p.name );
+    talker().assign_activity( ACT_WAIT_NPC, moves );
+    talker().activity->str_values.push_back( p.name );
     add_msg( m_good, _( "%s gives you a decent shave…" ), p.name );
 }
 
 void talk_function::morale_chat( npc &p )
 {
-    g->u.add_morale( MORALE_CHAT, rng( 3, 10 ), 10, 200_minutes, 5_minutes / 2 );
+    talker().add_morale( MORALE_CHAT, rng( 3, 10 ), 10, 200_minutes, 5_minutes / 2 );
     add_msg( m_good, _( "That was a pleasant conversation with %s…" ), p.disp_name() );
 }
 
 void talk_function::morale_chat_activity( npc &p )
 {
     const int moves = to_moves<int>( 10_minutes );
-    g->u.assign_activity( ACT_SOCIALIZE, moves );
-    g->u.activity->str_values.push_back( p.name );
+    talker().assign_activity( ACT_SOCIALIZE, moves );
+    talker().activity->str_values.push_back( p.name );
     add_msg( m_good, _( "That was a pleasant conversation with %s." ), p.disp_name() );
-    g->u.add_morale( MORALE_CHAT, rng( 3, 10 ), 10, 200_minutes, 5_minutes / 2 );
+    talker().add_morale( MORALE_CHAT, rng( 3, 10 ), 10, 200_minutes, 5_minutes / 2 );
 }
 
 void talk_function::buy_10_logs( npc &p )
@@ -629,8 +652,8 @@ void talk_function::buy_10_logs( npc &p )
     find_params.search_layers = { 0, 0 };
 
     std::vector<tripoint_abs_omt> places = get_overmapbuffer(
-            get_player_character().get_dimension() ).find_all(
-                    get_player_character().abs_omt_pos(), find_params );
+            talker().get_dimension() ).find_all(
+                    talker().abs_omt_pos(), find_params );
     if( places.empty() ) {
         debugmsg( "Couldn't find %s", "ranch_camp_67" );
         return;
@@ -638,7 +661,7 @@ void talk_function::buy_10_logs( npc &p )
     const auto &cur_om = g->get_cur_om();
     std::vector<tripoint_abs_omt> places_om;
     for( const tripoint_abs_omt &i : places ) {
-        if( &cur_om == get_overmapbuffer( get_player_character().get_dimension() ).get_existing_om_global(
+        if( &cur_om == get_overmapbuffer( talker().get_dimension() ).get_existing_om_global(
                 i ).om ) {
             places_om.push_back( i );
         }
@@ -661,8 +684,8 @@ void talk_function::buy_100_logs( npc &p )
     find_params.search_layers = { 0, 0 };
 
     std::vector<tripoint_abs_omt> places =
-        get_overmapbuffer( get_player_character().get_dimension() ).find_all(
-            get_player_character().abs_omt_pos(), find_params );
+        get_overmapbuffer( talker().get_dimension() ).find_all(
+            talker().abs_omt_pos(), find_params );
     if( places.empty() ) {
         debugmsg( "Couldn't find %s", "ranch_camp_67" );
         return;
@@ -670,7 +693,7 @@ void talk_function::buy_100_logs( npc &p )
     const auto &cur_om = g->get_cur_om();
     std::vector<tripoint_abs_omt> places_om;
     for( auto &i : places ) {
-        if( &cur_om == get_overmapbuffer( get_player_character().get_dimension() ).get_existing_om_global(
+        if( &cur_om == get_overmapbuffer( talker().get_dimension() ).get_existing_om_global(
                 i ).om ) {
             places_om.push_back( i );
         }
@@ -690,7 +713,7 @@ void talk_function::follow( npc &p )
     g->add_npc_follower( p.getID() );
     p.set_attitude( NPCATT_FOLLOW );
     p.set_fac( faction_id( "your_followers" ) );
-    g->u.cash += p.cash;
+    talker().cash += p.cash;
     p.cash = 0;
 }
 
@@ -730,7 +753,7 @@ void talk_function::hostile( npc &p )
         return;
     }
 
-    if( p.sees( g->u ) ) {
+    if( p.sees( talker() ) ) {
         add_msg( _( "%s turns hostile!" ), p.name );
     }
 
@@ -791,16 +814,16 @@ void talk_function::stranger_neutral( npc &p )
 void talk_function::drop_stolen_item( npc &p )
 {
     map &here = get_map();
-    for( auto &elem : g->u.inv_dump() ) {
+    for( auto &elem : talker().inv_dump() ) {
         if( elem->is_old_owner( p ) ) {
             detached_ptr<item> to_drop = elem->detach( );
             to_drop->remove_old_owner();
             to_drop->set_owner( p );
-            here.add_item_or_charges( g->u.bub_pos(), std::move( to_drop ) );
+            here.add_item_or_charges( talker().bub_pos(), std::move( to_drop ) );
         }
     }
-    if( g->u.is_hauling() ) {
-        g->u.stop_hauling();
+    if( talker().is_hauling() ) {
+        talker().stop_hauling();
     }
     p.set_attitude( NPCATT_NULL );
 }
@@ -832,21 +855,21 @@ void talk_function::drop_weapon( npc &p )
 
 void talk_function::player_weapon_away( npc &/*p*/ )
 {
-    g->u.i_add( g->u.remove_primary_weapon() );
+    talker().i_add( talker().remove_primary_weapon() );
 }
 
 void talk_function::player_weapon_drop( npc &/*p*/ )
 {
-    for( item *weapon : g->u.wielded_items() ) {
-        const auto ret = g->u.can_unwield( *weapon );
+    for( item *weapon : talker().wielded_items() ) {
+        const auto ret = talker().can_unwield( *weapon );
         if( ret.success() ) {
-            get_map().add_item_or_charges( g->u.bub_pos(), g->u.remove_primary_weapon() );
+            get_map().add_item_or_charges( talker().bub_pos(), talker().remove_primary_weapon() );
         }
     }
 
-    for( bionic &i : *g->u.my_bionics ) {
+    for( bionic &i : *talker().my_bionics ) {
         if( i.powered && i.info().has_flag( flag_BIONIC_WEAPON ) ) {
-            g->u.deactivate_bionic( i );
+            talker().deactivate_bionic( i );
         }
     }
 }
@@ -884,21 +907,22 @@ void talk_function::start_training( npc &p )
     const matype_id &style = p.chatbin.style;
     const spell_id &sp_id = p.chatbin.dialogue_spell;
     int expert_multiplier = 1;
-    if( skill.is_valid() && g->u.get_skill_level( skill ) < p.get_skill_level( skill ) ) {
+    if( skill.is_valid() && talker().get_skill_level( skill ) < p.get_skill_level( skill ) ) {
         cost = calc_skill_training_cost( p, skill );
         time = calc_skill_training_time( p, skill );
         name = skill.str();
-    } else if( p.chatbin.style.is_valid() && !g->u.martial_arts_data->has_martialart( style ) ) {
+    } else if( p.chatbin.style.is_valid() && !talker().martial_arts_data->has_martialart( style ) ) {
         cost = calc_ma_style_training_cost( p, style );
         time = calc_ma_style_training_time( p, style );
         name = p.chatbin.style.str();
         // already checked if can learn this spell in npctalk.cpp
     } else if( p.chatbin.dialogue_spell.is_valid() ) {
         const spell &temp_spell = p.magic->get_spell( sp_id );
-        const bool knows = g->u.magic->knows_spell( sp_id );
+        const bool knows = talker().magic->knows_spell( sp_id );
         cost = p.calc_spell_training_cost( knows, temp_spell.get_difficulty(), temp_spell.get_level() );
         name = temp_spell.id().str();
-        expert_multiplier = knows ? temp_spell.get_level() - g->u.magic->get_spell( sp_id ).get_level() : 1;
+        expert_multiplier = knows ? temp_spell.get_level() - talker().magic->get_spell(
+                                sp_id ).get_level() : 1;
         // quicker to learn with instruction as opposed to books.
         // if this is a known spell, then there is a set time to gain some exp.
         // if player doesn't know this spell, then the NPC will teach all of it
@@ -908,7 +932,7 @@ void talk_function::start_training( npc &p )
         if( knows ) {
             time = 1_hours;
         } else {
-            int seconds = g->u.magic->time_to_learn_spell( g->u, sp_id ) / 50;
+            int seconds = talker().magic->time_to_learn_spell( talker(), sp_id ) / 50;
             time = time_duration::from_seconds( clamp( seconds, 7200, 21600 ) );
         }
     } else {
@@ -927,7 +951,7 @@ void talk_function::start_training( npc &p )
                                            to_moves<int>( time ),
                                            p.getID().get_value(), 0, name );
     act->values.push_back( expert_multiplier );
-    g->u.assign_activity( std::move( act ) );
+    talker().assign_activity( std::move( act ) );
 
     p.add_effect( effect_asked_to_train, 6_hours );
 }
@@ -938,7 +962,7 @@ npc *pick_follower()
     std::vector<tripoint_bub_ms> locations;
 
     for( npc &guy : g->all_npcs() ) {
-        if( guy.is_player_ally() && g->u.sees( guy ) ) {
+        if( guy.is_player_ally() && talker().sees( guy ) ) {
             followers.push_back( &guy );
             locations.push_back( guy.bub_pos() );
         }
@@ -973,6 +997,12 @@ void talk_function::copy_npc_rules( npc &p )
 
 void talk_function::set_npc_pickup( npc &p )
 {
+    if( !talker().is_avatar() ) {
+        // Co-op: the rules screen can't be shown on a remote player's screen.
+        talker().add_msg_if_player( m_info, _( "Only the host can edit %s's pickup rules." ),
+                                    p.get_name() );
+        return;
+    }
     p.rules.pickup_whitelist->show( p.name );
 }
 

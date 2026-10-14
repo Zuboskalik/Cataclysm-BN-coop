@@ -1685,7 +1685,10 @@ void npc::on_attacked( const Creature &attacker )
     if( cata_mp::is_proxy( *this ) ) {
         return;
     }
-    if( attacker.is_player() && !is_enemy() ) {
+    // Co-op: the other players count as the player.
+    const bool by_player = attacker.is_player() ||
+                           ( attacker.is_npc() && cata_mp::is_proxy( *attacker.as_character() ) );
+    if( by_player && !is_enemy() ) {
         const auto attacked_faction = get_monster_faction();
         make_angry();
         hit_by_player = true;

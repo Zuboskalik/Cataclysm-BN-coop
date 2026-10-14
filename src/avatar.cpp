@@ -257,6 +257,15 @@ void avatar::mp_mirror_load( JsonIn &jsin )
     recalc_sight_limits();
 }
 
+void avatar::mp_mirror_missions( const std::vector<int> &active, const std::vector<int> &completed,
+                                 const std::vector<int> &failed, const int current )
+{
+    active_missions = mission::to_ptr_vector( active );
+    completed_missions = mission::to_ptr_vector( completed );
+    failed_missions = mission::to_ptr_vector( failed );
+    active_mission = current >= 0 ? mission::find( current ) : nullptr;
+}
+
 bool avatar::save_map_memory()
 {
     return player_map_memory->save( abs_pos() );
@@ -390,6 +399,9 @@ void avatar::on_mission_assignment( mission &new_mission )
 {
     active_missions.push_back( &new_mission );
     set_active_mission( new_mission );
+    // Co-op: missions are shared; the other players get it in their journal.
+    cata_mp::share_message( m_info, string_format( _( "New mission: \"%s\"." ),
+                            new_mission.name() ) );
 }
 
 void avatar::on_mission_finished( mission &cur_mission )
@@ -397,10 +409,14 @@ void avatar::on_mission_finished( mission &cur_mission )
     if( cur_mission.has_failed() ) {
         failed_missions.push_back( &cur_mission );
         add_msg_if_player( m_bad, _( "Mission \"%s\" is failed." ), cur_mission.name() );
+        cata_mp::share_message( m_bad, string_format( _( "Mission \"%s\" is failed." ),
+                                cur_mission.name() ) );
     } else {
         completed_missions.push_back( &cur_mission );
         add_msg_if_player( m_good, _( "Mission \"%s\" is successfully completed." ),
                            cur_mission.name() );
+        cata_mp::share_message( m_good, string_format( _( "Mission \"%s\" is successfully completed." ),
+                                cur_mission.name() ) );
     }
     const auto iter = std::ranges::find( active_missions, &cur_mission );
     if( iter == active_missions.end() ) {

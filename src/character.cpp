@@ -10026,6 +10026,13 @@ void Character::apply_damage( Creature *source, item *source_weapon, item *sourc
         return;
     }
 
+    // Co-op: a remote player's character hurting an NPC angers it, as the
+    // player would.
+    if( dam > 0 && source != nullptr && is_npc() && source->is_npc() &&
+        cata_mp::is_proxy( *source->as_character() ) ) {
+        as_npc()->on_attacked( *source );
+    }
+
     if( hurt.id().is_null() ) {
         debugmsg( "Wacky body part hurt!" );
         hurt = bodypart_id( "torso" );

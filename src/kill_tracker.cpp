@@ -9,6 +9,9 @@
 #include "character_id.h"
 #include "color.h"
 #include "event.h"
+#include "game.h"
+#include "mp_session.h"
+#include "npc.h"
 #include "mtype.h"
 #include "options.h"
 #include "string_formatter.h"
@@ -126,12 +129,28 @@ void kill_tracker::clear()
     npc_kills.clear();
 }
 
+namespace
+{
+
+/// The player's kills; in co-op the other players' kills count too (shared
+/// missions and scores).
+auto counts_as_player( const character_id &killer ) -> bool
+{
+    if( killer == get_avatar().getID() ) {
+        return true;
+    }
+    const npc *guy = cata_mp::is_host() ? g->find_npc( killer ) : nullptr;
+    return guy != nullptr && cata_mp::is_proxy( *guy );
+}
+
+} // namespace
+
 void kill_tracker::notify( const cata::event &e )
 {
     switch( e.type() ) {
         case event_type::character_kills_monster: {
             character_id killer = e.get<character_id>( "killer" );
-            if( killer != get_avatar().getID() ) {
+            if( !counts_as_player( killer ) ) {
                 // TODO: add a kill counter for npcs?
                 break;
             }
@@ -141,7 +160,7 @@ void kill_tracker::notify( const cata::event &e )
         }
         case event_type::character_kills_character: {
             character_id killer = e.get<character_id>( "killer" );
-            if( killer != get_avatar().getID() ) {
+            if( !counts_as_player( killer ) ) {
                 break;
             }
             std::string victim_name = e.get<cata_variant_type::string>( "victim_name" );

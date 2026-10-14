@@ -84,6 +84,12 @@ class avatar : public player
          * the proxy NPC the host keeps for us, keeping the local map memory.
          */
         void mp_mirror_load( JsonIn &jsin );
+        /**
+         * Co-op client: the host's journal, whose missions all players share
+         * (uids of world missions mirrored from the host).
+         */
+        void mp_mirror_missions( const std::vector<int> &active, const std::vector<int> &completed,
+                                 const std::vector<int> &failed, int current );
 
         // newcharacter.cpp
         bool create( character_type type, const std::string &tempname = "" );

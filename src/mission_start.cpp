@@ -11,6 +11,7 @@
 #include "map_iterator.h"
 #include "messages.h"
 #include "mission.h" // IWYU pragma: associated
+#include "mp_session.h"
 #include "name.h"
 #include "npc.h"
 #include "npc_class.h"
@@ -58,8 +59,8 @@ void mission_start::place_dog( mission *miss )
         debugmsg( "Couldn't find NPC!  %d", miss->npc_id.get_value() );
         return;
     }
-    g->u.i_add( item::spawn( "dog_whistle", calendar::start_of_cataclysm ) );
-    add_msg( _( "%s gave you a dog whistle." ), dev->name );
+    cata_mp::acting_player().i_add( item::spawn( "dog_whistle", calendar::start_of_cataclysm ) );
+    cata_mp::acting_player().add_msg_if_player( _( "%s gave you a dog whistle." ), dev->name );
 
     miss->target = house;
     get_overmapbuffer( miss->get_dimension() ).reveal( house, 6 );
@@ -213,8 +214,8 @@ void mission_start::place_npc_software( mission *miss )
         debugmsg( "Couldn't find NPC!  %d", miss->npc_id.get_value() );
         return;
     }
-    g->u.i_add( item::spawn( "usb_drive", calendar::start_of_cataclysm ) );
-    add_msg( _( "%s gave you a USB drive." ), dev->name );
+    cata_mp::acting_player().i_add( item::spawn( "usb_drive", calendar::start_of_cataclysm ) );
+    cata_mp::acting_player().add_msg_if_player( _( "%s gave you a USB drive." ), dev->name );
 
     std::string type = "house";
 

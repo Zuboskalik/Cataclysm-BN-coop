@@ -22,6 +22,7 @@
 #include "character.h"
 #include "character_martial_arts.h"
 #include "debug.h"
+#include "dialogue_win.h"
 #include "game.h"
 #include "cata_utility.h"
 #include "path_info.h"
@@ -43,6 +44,7 @@
 #include "map/mapdata.h"
 #include "map/submap.h"
 #include "messages.h"
+#include "mission.h"
 #include "mod_manager.h"
 #include "map/field_type.h"
 #include "monster.h"
@@ -51,6 +53,7 @@
 #include "mp_common.h"
 #include "mp_net.h"
 #include "npc.h"
+#include "npctrade.h"
 #include "overmap/omdata.h"
 #include "options.h"
 #include "output.h"
@@ -67,6 +70,7 @@
 #include "translations.h"
 #include "ui.h"
 #include "ui_manager.h"
+#include "trade_win.h"
 #include "trap.h"
 #include "vehicle/veh_interact.h"
 #include "vehicle/vehicle.h"
@@ -138,6 +142,11 @@ struct state_t {
     int host_id = 0;
     // The character is busy with a long action on the host.
     bool busy = false;
+    // The host's journal (shared missions), by mission uid.
+    std::vector<int> missions_active;
+    std::vector<int> missions_completed;
+    std::vector<int> missions_failed;
+    int mission_current = -1;
 };
 
 state_t S;
@@ -461,6 +470,26 @@ void apply_state( message &m )
             log( std::string( "mirror failed: " ) + e.what() );
         }
         here.invalidate_visibility_caches();
+    }
+    // Missions are shared: the host's journal shows up in ours.  Reloading
+    // our character empties it, so it is applied again then.
+    if( jo.has_object( "missions" ) ) {
+        try {
+            JsonObject mj = jo.get_object( "missions" );
+            mj.allow_omitted_members();
+            mission::clear_all();
+            mission::unserialize_all( *mj.get_raw( "world" ) );
+            mj.read( "active", S.missions_active );
+            mj.read( "completed", S.missions_completed );
+            mj.read( "failed", S.missions_failed );
+            S.mission_current = mj.get_int( "current", -1 );
+        } catch( const std::exception &e ) {
+            log( std::string( "missions failed: " ) + e.what() );
+        }
+    }
+    if( jo.has_object( "missions" ) || jo.has_member( "you" ) ) {
+        u.mp_mirror_missions( S.missions_active, S.missions_completed, S.missions_failed,
+                              S.mission_current );
     }
     recenter_map();
     const int new_z = u.abs_pos().z();
@@ -1380,13 +1409,127 @@ void send_chat( const std::string &text )
 
 // A question raised by our own action while the host runs it; the host
 // waits for the answer.  Kinds: a menu choice, a direction, a map tile, text.
+// The conversation the host runs for our character, in a window like the
+// player's.  The window (and what was said) is kept for the questions of one
+// conversation.
+int talk_conversation = -1;
+std::unique_ptr<dialogue_window> talk_window;
+
+std::string answer_talk( const JsonObject &jo )
+{
+    const int conversation = jo.get_int( "conv", 0 );
+    if( !talk_window || conversation != talk_conversation ) {
+        talk_window = std::make_unique<dialogue_window>();
+        talk_conversation = conversation;
+    }
+    dialogue_window &d_win = *talk_window;
+    const std::string npc_name = jo.get_string( "name", "" );
+    if( !jo.get_bool( "repeat", false ) ) {
+        d_win.add_to_history( jo.get_string( "text", "" ) );
+    }
+    std::vector<talk_data> responses;
+    for( JsonArray r : jo.get_array( "resp" ) ) {
+        responses.push_back( talk_data{
+            .letter = static_cast<char>( r.get_int( 0 ) ),
+            .col = color_from_string( r.get_string( 1 ) ),
+            .text = r.get_string( 2 ),
+        } );
+    }
+    if( responses.empty() ) {
+        return ",\"i\":-1";
+    }
+
+    size_t selected = 0;
+    ui_adaptor ui;
+    ui.on_screen_resize( [&]( ui_adaptor & ui ) {
+        d_win.resize_dialogue( ui );
+    } );
+    ui.mark_resize();
+    ui.on_redraw( [&]( const ui_adaptor & ) {
+        d_win.print_header( npc_name );
+        d_win.display_responses( responses, selected );
+    } );
+    const size_t count = responses.size();
+    d_win.refresh_response_display();
+    while( true ) {
+        ui_manager::redraw();
+        const int ch = inp_mngr.get_input_event().get_first_input();
+        if( ch == KEY_UP ) {
+            selected = selected > 0 ? selected - 1 : count - 1;
+            continue;
+        }
+        if( ch == KEY_DOWN ) {
+            selected = selected + 1 < count ? selected + 1 : 0;
+            continue;
+        }
+        if( ch == KEY_PPAGE || ch == KEY_NPAGE ) {
+            if( const std::optional<size_t> entry = d_win.handle_scrolling( ch ) ) {
+                selected = *entry;
+            }
+            continue;
+        }
+        // Look at, size up, opinion, yell: the host knows what they show.
+        if( ch == 'L' || ch == 'S' || ch == 'O' || ch == 'Y' ) {
+            return ",\"sp\":" + json_quote( std::string( 1, static_cast<char>( ch ) ) );
+        }
+        const int pick = ch == KEY_ENTER || ch == '\n' || ch == '\r' ? static_cast<int>( selected ) :
+                         ch - 'a';
+        if( pick >= 0 && pick < static_cast<int>( count ) ) {
+            d_win.add_to_history( string_format( pgettext( "you say something", "%s: %s" ),
+                                                 colorize( _( "You" ), c_green ), responses[pick].text ) );
+            return string_format( ",\"i\":%d", pick );
+        }
+    }
+}
+
+// The deal for one side of a trade: [index, type, name, amount] of what was
+// picked.
+std::string trade_picks( const std::vector<item_pricing> &list, const bool theirs )
+{
+    std::string out;
+    for( size_t i = 0; i < list.size(); ++i ) {
+        const item_pricing &ip = list[i];
+        if( !ip.selected ) {
+            continue;
+        }
+        const int amount = ip.charges > 0 ? ( theirs ? ip.u_charges : ip.npc_charges ) :
+                           ( theirs ? ip.u_has : ip.npc_has );
+        const item &it = *ip.locs.front();
+        out += out.empty() ? "" : ",";
+        out += string_format( "[%d,%s,%s,%d]", static_cast<int>( i ), json_quote( it.typeId().str() ),
+                              json_quote( it.display_name() ), amount );
+    }
+    return "[" + out + "]";
+}
+
+// Trading (also a mission's reward): the trade window on our copies of both
+// characters; the host checks and makes the deal.
+std::string answer_trade( const JsonObject &jo )
+{
+    npc *np = g->find_npc( character_id( jo.get_int( "npc", -1 ) ) );
+    if( np == nullptr ) {
+        return ",\"ok\":false";
+    }
+    npc_trading::trade_state state;
+    npc_trading::setup_trade_state( state, jo.get_int( "cost", 0 ), *np );
+    if( !trading_window( state ).perform_trade( *np, jo.get_string( "deal", "" ) ) ) {
+        return ",\"ok\":false";
+    }
+    return ",\"ok\":true,\"theirs\":" + trade_picks( state.theirs, true ) +
+           ",\"yours\":" + trade_picks( state.yours, false );
+}
+
 void answer_question( message &m )
 {
     JsonObject jo = m.object();
     const int id = jo.get_int( "id", 0 );
     const std::string kind = jo.get_string( "kind", "choice" );
     std::string reply;
-    if( kind == "dir" ) {
+    if( kind == "talk" ) {
+        reply = answer_talk( jo );
+    } else if( kind == "trade" ) {
+        reply = answer_trade( jo );
+    } else if( kind == "dir" ) {
         const std::optional<tripoint_rel_ms> dir = choose_direction( jo.get_string( "text", "" ),
                 jo.get_bool( "vertical", false ) );
         reply = dir ? string_format( ",\"ok\":true,\"dx\":%d,\"dy\":%d,\"dz\":%d", dir->x(), dir->y(),
@@ -2161,13 +2304,35 @@ bool client_intercept_action( action_id act,
             client::request_autoattack();
             return true;
         case ACTION_CHAT: {
-            // Only shouting for now; talking to NPCs is the host's.
+            // NPCs we could talk to, as the game picks them for the player.
+            std::vector<npc *> available = g->get_npcs_if( [&]( const npc & guy ) {
+                return guy.getID().get_value() != S.host_id && !is_proxy( guy ) && !guy.is_dead() &&
+                       u.bub_pos().z() == guy.bub_pos().z() && u.sees( guy.bub_pos() ) &&
+                       rl_dist( u.bub_pos(), guy.bub_pos() ) <= SEEX * 2;
+            } );
             uilist menu;
             menu.text = _( "What do you want to do?" );
             menu.addentry( 0, true, 'a', _( "Yell" ) );
             menu.addentry( 1, true, 'b', _( "Yell a sentence" ) );
+            menu.addentry( 2, !available.empty(), 't', available.size() == 1 ?
+                           string_format( _( "Talk to %s" ), available.front()->get_name() ) : _( "Talk to…" ) );
             menu.query();
-            if( menu.ret == 0 ) {
+            if( menu.ret == 2 ) {
+                npc *who = available.front();
+                if( available.size() > 1 ) {
+                    uilist pick;
+                    pick.text = _( "Talk to whom?" );
+                    for( size_t i = 0; i < available.size(); ++i ) {
+                        pick.addentry( static_cast<int>( i ), true, MENU_AUTOASSIGN, available[i]->get_name() );
+                    }
+                    pick.query();
+                    if( pick.ret < 0 || pick.ret >= static_cast<int>( available.size() ) ) {
+                        return true;
+                    }
+                    who = available[pick.ret];
+                }
+                client::send_action( "talk", string_format( ",\"id\":%d", who->getID().get_value() ) );
+            } else if( menu.ret == 0 ) {
                 client::send_action( "shout" );
             } else if( menu.ret == 1 ) {
                 string_input_popup popup;

@@ -56,7 +56,7 @@ Client → host:
 | --- | --- |
 | `probe` | `ver` (`<protocol>|<build>`, must match exactly), `pw` |
 | `join` | `name`, `ver`, `pw`, `char` (serialized new character) or `null` to continue an existing one |
-| `act` | `seq`, `a` = `move`(`dx`,`dy`) `vmove`(`dz`) `pause` `wait`(`turns`) `open`/`close`/`smash`(`x`,`y`,`z`) `pickup`(`x`,`y`,`z`,`items`=[[ground index,count,type]]) `drop`(`items`=[[item index,count,type]]) `wield`/`wear`/`takeoff`/`eat`(`idx`,`type`) `unwield` `move_mode`(`mode`) `cast`(`id`,`ignore`, target `x`,`y`,`z` if the spell needs one) `bionic`(`idx`,`id`, `style` for the CQB bionic) `mutation`(`id`,`on`) `style`(`style`,`hands_free`) |
+| `act` | `seq`, `a` = `move`(`dx`,`dy`) `vmove`(`dz`) `pause` `wait`(`turns`) `open`/`close`/`smash`(`x`,`y`,`z`) `pickup`(`x`,`y`,`z`,`items`=[[ground index,count,type]]) `drop`(`items`=[[item index,count,type]]) `wield`/`wear`/`takeoff`/`eat`(`idx`,`type`) `unwield` `move_mode`(`mode`) `cast`(`id`,`ignore`, target `x`,`y`,`z` if the spell needs one) `bionic`(`idx`,`id`, `style` for the CQB bionic) `mutation`(`id`,`on`) `style`(`style`,`hands_free`) `talk`(`id` of the NPC) |
 | `stop_wait`, `chat`(`text`), `need`(`sm`=[[x,y,z]]), `resync`, `quit` | |
 
 Host → client:
@@ -65,7 +65,7 @@ Host → client:
 | --- | --- |
 | `welcome` | `world`, `host`, `seed`, `mods`, `options`, `players` (characters that can be continued) |
 | `joined` | `name`, `host` |
-| `state` | `turn`; `you` (proxy, serialized NPC); `sm` (submaps, map save format); `mon`+`mon_keys`, `mon_del`, `mon_reset`; `npc`+`npc_keys`, `npc_del`, `npc_reset`, `host_id`; `omt` ([x,y,z,oter id]); `msg` ([type,text]) |
+| `state` | `turn`; `you` (proxy, serialized NPC); `sm` (submaps, map save format); `mon`+`mon_keys`, `mon_del`, `mon_reset`; `npc`+`npc_keys`, `npc_del`, `npc_reset`, `host_id`; `omt` ([x,y,z,oter id]); `missions` (`world` missions, the journal's `active`/`completed`/`failed` uids, `current`); `msg` ([type,text]) |
 | `turn` | it is your turn |
 | `ack` | `seq`, `ok` |
 | `chat`, `error`(`msg`), `bye`(`msg`), `died` | |
@@ -89,3 +89,23 @@ with the spell targeting UI) and sent as `cast`, `bionic`, `mutation` and
 proxy.  Things that need a target while the host runs them for a proxy
 (spells cast from items, bionic guns, ranged mutations) ask the remote
 player through the usual `ask`/`target` question.
+
+## Conversations, trading and missions
+
+A remote player talks to NPCs (`talk`): the host runs the very same
+conversation with the player's character as the speaker, and every response
+list goes to the player as an `ask` of kind `talk` (`conv`, `name`, `text`,
+`repeat`, `resp` = [[letter, color, text]]); the client shows it in the
+game's conversation window and answers with the response index (`i`) or a
+special key (`sp`: look at, size up, opinion, yell).  Trading (also a
+mission's reward) is an `ask` of kind `trade` (`npc`, `cost`, `deal`): the
+client runs the trade window on its copies of both characters and answers
+with what it picked (`theirs`/`yours` = [[index, type, name, amount]]); the
+host repeats the deal's checks and makes it.
+
+Missions are shared: whoever accepts one, it is assigned to the host's
+avatar and every player sees it in the journal.  Kills by any player count,
+a place any player reaches counts, and items a mission asks for are taken
+from (and rewards given to) the player who turns it in.  Hurting an NPC
+angers it at all players, and an NPC that joins one of them is everyone's
+ally.

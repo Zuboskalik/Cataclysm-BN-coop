@@ -28,6 +28,7 @@
 #include "crafting.h"
 #include "creature.h"
 #include "debug.h"
+#include "dialogue_win.h"
 #include "effect.h"
 #include "faction.h"
 #include "flag.h"
@@ -50,6 +51,7 @@
 #include "map/mapdata.h"
 #include "map/submap.h"
 #include "messages.h"
+#include "mission.h"
 #include "map/field_type.h"
 #include "monster.h"
 #include "martialarts.h"
@@ -58,6 +60,7 @@
 #include "mp_common.h"
 #include "mp_net.h"
 #include "npc.h"
+#include "npctrade.h"
 #include "overmap/omdata.h"
 #include "options.h"
 #include "output.h"
@@ -143,6 +146,7 @@ struct peer_t {
     std::map<int, size_t> npc_sent;
     size_t you_sent = 0;
     std::map<tripoint_abs_omt, std::string> omt_sent;
+    size_t missions_sent = 0;
     std::optional<tripoint_abs_omt> omt_center;
     std::vector<std::pair<int, std::string>> msgs;
     // Submaps the client is known to be missing; sent with the next broadcast.
@@ -156,6 +160,8 @@ std::map<int, peer_t> peers;
 // that player (prompt_peer); their answers arrive by question id.
 int prompt_peer = -1;
 int next_question_id = 1;
+// Tells the remote player's conversation windows apart.
+int next_conversation_id = 0;
 // Raw answer messages by question id.
 std::map<int, std::string> answers;
 
@@ -643,6 +649,26 @@ std::string build_state( peer_t &p, sync_level level, broadcast_cache &cache )
         }
     }
 
+    // ---- missions: shared by all players, kept in the avatar's journal
+    {
+        const std::string missions = write_json( [&u]( JsonOut & jsout ) {
+            jsout.start_object();
+            jsout.member( "world" );
+            mission::serialize_all( jsout );
+            jsout.member( "active", mission::to_uid_vector( u.get_active_missions() ) );
+            jsout.member( "completed", mission::to_uid_vector( u.get_completed_missions() ) );
+            jsout.member( "failed", mission::to_uid_vector( u.get_failed_missions() ) );
+            const mission *current = u.get_active_mission();
+            jsout.member( "current", current != nullptr ? current->get_id() : -1 );
+            jsout.end_object();
+        } );
+        const size_t h = std::hash<std::string>()( missions );
+        if( h != p.missions_sent || p.full_sync ) {
+            p.missions_sent = h;
+            out += ",\"missions\":" + missions;
+        }
+    }
+
     // ---- messages
     if( !p.msgs.empty() ) {
         std::string msgs;
@@ -864,6 +890,10 @@ action_result do_move( npc &guy, int dx, int dy )
                              guy.attitude_to( *critter ) == Attitude::A_HOSTILE;
         if( hostile ) {
             guy.melee_attack( *critter, true );
+            if( npc *other = critter->as_npc() ) {
+                // Like the player's attack: it angers them even on a miss.
+                other->on_attacked( guy );
+            }
             return action_result{};
         }
         // Friends and pets step aside, like followers do for the player.
@@ -2052,6 +2082,23 @@ action_result do_style( npc &guy, const JsonObject &jo )
     return action_result{};
 }
 
+// Talks to an NPC (C, "Talk to whom?").  The conversation runs here with the
+// player's character; its windows show up on the player's screen.
+action_result do_talk( npc &guy, const JsonObject &jo )
+{
+    npc *who = g->find_npc( character_id( jo.get_int( "id", -1 ) ) );
+    if( who == nullptr || who->is_dead() || is_proxy( *who ) ) {
+        return fail( _( "There's nobody there." ) );
+    }
+    if( who->bub_pos().z() != guy.bub_pos().z() || !guy.sees( *who ) ||
+        rl_dist( guy.bub_pos(), who->bub_pos() ) > SEEX * 2 ) {
+        return fail( string_format( _( "%s can't hear you from there." ), who->get_name() ) );
+    }
+    who->talk_to_u();
+    guy.mod_moves( -100 );
+    return action_result{};
+}
+
 action_result execute( peer_t &p, npc &guy, message &m )
 {
     JsonObject jo = m.object();
@@ -2133,6 +2180,10 @@ action_result execute( peer_t &p, npc &guy, message &m )
         }
         if( a == "attack" ) {
             guy.melee_attack( *target, true );
+            if( npc *other = target->as_npc() ) {
+                // Like the player's attack: it angers them even on a miss.
+                other->on_attacked( guy );
+            }
             return action_result{};
         }
         npc *other = target->as_npc();
@@ -2198,6 +2249,9 @@ action_result execute( peer_t &p, npc &guy, message &m )
     }
     if( a == "style" ) {
         return do_style( guy, jo );
+    }
+    if( a == "talk" ) {
+        return do_talk( guy, jo );
     }
     return fail( _( "That action is not available in co-op yet." ) );
 }
@@ -2758,6 +2812,37 @@ void open_players_menu()
     }
 }
 
+player &acting_player()
+{
+    player *actor = remote_actor();
+    return actor != nullptr ? *actor : get_avatar();
+}
+
+std::vector<player *> party_members()
+{
+    std::vector<player *> ret = { &get_avatar() };
+    if( is_host() ) {
+        for( npc &guy : g->all_npcs() ) {
+            if( is_proxy( guy ) && !guy.is_dead() ) {
+                ret.push_back( &guy );
+            }
+        }
+    }
+    return ret;
+}
+
+void share_message( const int type, const std::string &text )
+{
+    if( !is_host() ) {
+        return;
+    }
+    for( auto &[id, p] : host::peers ) {
+        if( p.joined ) {
+            host::send_to_player( p, static_cast<game_message_type>( type ), remove_color_tags( text ) );
+        }
+    }
+}
+
 bool remote_prompts_active()
 {
     return is_host() && host::prompt_peer >= 0;
@@ -2997,6 +3082,141 @@ bool proxy_fire_fake_gun( Character &who, item &fake_gun, int64_t cost_per_shot_
     const int shots = ranged::fire_gun( who, *target, mode.qty, *mode, nullptr );
     if( shots > 0 && cost > 0_J ) {
         who.mod_power_level( -cost * shots );
+    }
+    return true;
+}
+
+void remote_talk_begin()
+{
+    ++host::next_conversation_id;
+}
+
+std::optional<remote_talk_answer> remote_talk( const remote_talk_request &req )
+{
+    std::string resp;
+    for( const talk_data &r : req.responses ) {
+        resp += resp.empty() ? "" : ",";
+        resp += string_format( "[%d,%s,%s]", static_cast<int>( r.letter ),
+                               json_quote( string_from_color( r.col ) ), json_quote( r.text ) );
+    }
+    const std::optional<std::string> answer = ask_remote( "talk",
+            string_format( ",\"conv\":%d,\"name\":%s,\"text\":%s,\"repeat\":%s,\"resp\":[%s]",
+                           host::next_conversation_id, json_quote( req.npc_name ), json_quote( req.challenge ),
+                           req.repeat ? "true" : "false", resp ) );
+    if( !answer ) {
+        return std::nullopt;
+    }
+    message m( *answer );
+    JsonObject jo = m.object();
+    const std::string special = jo.get_string( "sp", "" );
+    if( !special.empty() ) {
+        return remote_talk_answer{ .special = special.front() };
+    }
+    return remote_talk_answer{ .index = jo.get_int( "i", -1 ) };
+}
+
+namespace
+{
+
+// One side of a deal the remote player made: entries [index, type, name,
+// amount].  The client built the same lists from its copies of both
+// characters; an entry that does not match by index is looked up by type and
+// name.  False if something they picked is not there any more.
+bool apply_trade_picks( std::vector<item_pricing> &list, const JsonArray &picks, const bool theirs )
+{
+    for( JsonArray pick : picks ) {
+        const int index = pick.get_int( 0 );
+        const itype_id type( pick.get_string( 1 ) );
+        const std::string name = pick.get_string( 2 );
+        const int amount = pick.get_int( 3 );
+        const auto matches = [&]( const item_pricing & ip ) {
+            const item &it = *ip.locs.front();
+            return !ip.selected && it.typeId() == type && it.display_name() == name;
+        };
+        item_pricing *ip = nullptr;
+        if( index >= 0 && index < static_cast<int>( list.size() ) && matches( list[index] ) ) {
+            ip = &list[index];
+        } else {
+            const auto found = std::ranges::find_if( list, matches );
+            ip = found != list.end() ? &*found : nullptr;
+        }
+        if( ip == nullptr || amount <= 0 ) {
+            return false;
+        }
+        const bool by_charges = ip->charges > 0;
+        const int max_amount = by_charges ? ip->charges : std::max( ip->count, 1 );
+        int &owner_sells = theirs ? ( by_charges ? ip->u_charges : ip->u_has ) :
+                           ( by_charges ? ip->npc_charges : ip->npc_has );
+        owner_sells = std::min( amount, max_amount );
+        ip->selected = true;
+    }
+    return true;
+}
+
+} // namespace
+
+bool remote_trade( npc &np, npc_trading::trade_state &state, const int cost,
+                   const std::string &deal )
+{
+    player *actor = remote_actor();
+    if( actor == nullptr ) {
+        return false;
+    }
+    // Their copies of both characters must be current (a shopkeeper has just
+    // restocked).
+    host::broadcast( host::sync_level::light );
+    const std::optional<std::string> answer = ask_remote( "trade",
+            string_format( ",\"npc\":%d,\"cost\":%d,\"deal\":%s", np.getID().get_value(), cost,
+                           json_quote( deal ) ) );
+    if( !answer ) {
+        return false;
+    }
+    message m( *answer );
+    JsonObject jo = m.object();
+    if( !jo.get_bool( "ok", false ) ) {
+        return false;
+    }
+    if( !apply_trade_picks( state.theirs, jo.get_array( "theirs" ), true ) ||
+        !apply_trade_picks( state.yours, jo.get_array( "yours" ), false ) ) {
+        actor->add_msg_if_player( m_info,
+                                  _( "The deal fell through: something changed hands meanwhile." ) );
+        return false;
+    }
+
+    // The balance and the NPC's room, as the trade window keeps them.
+    state.volume_left = np.is_shopkeeper() ? 5000_liter : np.volume_capacity() - np.volume_carried();
+    state.weight_left = np.is_shopkeeper() ? 5000_kilogram : np.weight_capacity() - np.weight_carried();
+    const auto amount_of = []( const item_pricing & ip, const bool theirs ) {
+        if( ip.charges > 0 ) {
+            return theirs ? ip.u_charges : ip.npc_charges;
+        }
+        return theirs ? ip.u_has : ip.npc_has;
+    };
+    const auto affects_npc_capacity = [&np]( const item & it ) {
+        return it.where() == item_location_type::character && &it != &np.primary_weapon();
+    };
+    for( const bool theirs : { true, false } ) {
+        for( const item_pricing &ip : theirs ? state.theirs : state.yours ) {
+            if( !ip.selected ) {
+                continue;
+            }
+            const int signed_amount = theirs ? amount_of( ip, true ) : -amount_of( ip, false );
+            if( !np.will_exchange_items_freely() ) {
+                state.your_balance -= static_cast<int>( ip.price * signed_amount );
+            }
+            if( affects_npc_capacity( *ip.locs.front() ) ) {
+                state.volume_left += ip.vol * signed_amount;
+                state.weight_left += ip.weight * signed_amount;
+            }
+        }
+    }
+    if( !npc_trading::npc_will_accept_trade( state, np ) ) {
+        actor->add_msg_if_player( m_info, _( "%s doesn't accept that deal." ), np.get_name() );
+        return false;
+    }
+    if( state.volume_left < 0_ml || state.weight_left < 0_gram ) {
+        actor->add_msg_if_player( m_info, _( "%s can't carry all that." ), np.get_name() );
+        return false;
     }
     return true;
 }

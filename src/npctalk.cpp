@@ -145,7 +145,7 @@ std::string talk_trial::name() const
 /** Time (in turns) and cost (in cent) for training: */
 time_duration calc_skill_training_time( const npc &p, const skill_id &skill )
 {
-    return 1_minutes + 30_seconds * get_avatar().get_skill_level( skill ) -
+    return 1_minutes + 30_seconds * cata_mp::acting_player().get_skill_level( skill ) -
            1_seconds * p.get_skill_level( skill );
 }
 
@@ -154,7 +154,7 @@ int calc_skill_training_cost( const npc &p, const skill_id &skill )
     if( p.is_player_ally() ) {
         return 0;
     }
-    avatar &you = get_avatar();
+    const player &you = cata_mp::acting_player();
     return 1000 * ( 1 + you.get_skill_level( skill ) ) * ( 1 + you.get_skill_level( skill ) );
 }
 
@@ -1099,7 +1099,10 @@ void npc_chatbin::check_missions()
 
 void npc::talk_to_u( bool radio_contact, bool enforce_first_topic )
 {
-    avatar &you = get_avatar();
+    // Co-op: a remote player talks through their character on the host.
+    player &you = cata_mp::acting_player();
+    // Missions belong to the avatar; in co-op they are shared by all players.
+    avatar &mission_owner = get_avatar();
     if( you.is_dead_state() ) {
         set_attitude( NPCATT_NULL );
         return;
@@ -1110,10 +1113,10 @@ void npc::talk_to_u( bool radio_contact, bool enforce_first_topic )
         set_attitude( NPCATT_NULL );
     } else if( !has_mind_control && ( get_attitude() == NPCATT_FLEE ||
                                       get_attitude() == NPCATT_FLEE_TEMP ) ) {
-        add_msg( _( "%s is fleeing from you!" ), name );
+        you.add_msg_if_player( _( "%s is fleeing from you!" ), name );
         return;
     } else if( !has_mind_control && get_attitude() == NPCATT_KILL ) {
-        add_msg( _( "%s is hostile!" ), name );
+        you.add_msg_if_player( _( "%s is hostile!" ), name );
         return;
     }
     if( get_faction() ) {
@@ -1127,12 +1130,12 @@ void npc::talk_to_u( bool radio_contact, bool enforce_first_topic )
     chatbin.check_missions();
 
     // For each active mission we have, let the mission know we talked to this NPC.
-    for( auto &mission : you.get_active_missions() ) {
+    for( auto &mission : mission_owner.get_active_missions() ) {
         mission->on_talk_with_npc( this->getID() );
     }
 
     for( auto &mission : chatbin.missions_assigned ) {
-        if( mission->get_assigned_player_id() == you.getID() ) {
+        if( mission->get_assigned_player_id() == mission_owner.getID() ) {
             d.missions_assigned.push_back( mission );
         }
     }
@@ -1147,7 +1150,9 @@ void npc::talk_to_u( bool radio_contact, bool enforce_first_topic )
     } else if( get_attitude() == NPCATT_RECOVER_GOODS ) {
         d.add_topic( "TALK_STOLE_ITEM" );
     }
-    you.dialogue_by_radio = d.by_radio;
+    if( avatar *u = you.as_avatar() ) {
+        u->dialogue_by_radio = d.by_radio;
+    }
     int most_difficult_mission = 0;
     for( auto &mission : chatbin.missions ) {
         const auto &type = mission->get_type();
@@ -1160,7 +1165,7 @@ void npc::talk_to_u( bool radio_contact, bool enforce_first_topic )
     most_difficult_mission = 0;
     bool chosen_urgent = false;
     for( auto &mission : chatbin.missions_assigned ) {
-        if( mission->get_assigned_player_id() != you.getID() ) {
+        if( mission->get_assigned_player_id() != mission_owner.getID() ) {
             // Not assigned to the player that is currently talking to the npc
             continue;
         }
@@ -1228,10 +1233,14 @@ void npc::talk_to_u( bool radio_contact, bool enforce_first_topic )
     if( enforce_first_topic ) { d.add_topic( chatbin.first_topic ); }
 
     dialogue_window d_win;
+    if( cata_mp::remote_prompts_active() ) {
+        // A fresh conversation window on the remote player's screen.
+        cata_mp::remote_talk_begin();
+    }
     // Main dialogue loop
     do {
         if( chatbin.mission_selected != nullptr ) {
-            if( chatbin.mission_selected->get_assigned_player_id() != you.getID() ) {
+            if( chatbin.mission_selected->get_assigned_player_id() != mission_owner.getID() ) {
                 // Don't talk about a mission that is assigned to someone else.
                 chatbin.mission_selected = nullptr;
             }
@@ -1290,7 +1299,7 @@ void npc::talk_to_u( bool radio_contact, bool enforce_first_topic )
         return;
     }
 
-    if( !you.has_effect( effect_under_op ) ) {
+    if( !you.has_effect( effect_under_op ) && you.is_avatar() ) {
         g->cancel_activity_or_ignore_query( distraction_type::talked_to,
                                             string_format( _( "%s talked to you." ), name ) );
     }
@@ -1327,7 +1336,7 @@ std::string dialogue::dynamic_line( const talk_topic &the_topic ) const
                    beta->name );
     }
     if( topic == "TALK_SEDATED" ) {
-        int firstaid_lvl = get_player_character().get_skill_level( skill_id( "firstaid" ) );
+        int firstaid_lvl = alpha->get_skill_level( skill_id( "firstaid" ) );
         time_duration dur = character_funcs::estimate_effect_dur( firstaid_lvl, effect_narcosis, 15_minutes,
                             6, *beta );
         return string_format(
@@ -1372,7 +1381,7 @@ std::string dialogue::dynamic_line( const talk_topic &the_topic ) const
         return ret;
     }
 
-    avatar &you = get_avatar();
+    player &you = *alpha;
     if( topic == "TALK_NONE" || topic == "TALK_DONE" ) {
         return _( "Bye." );
     } else if( topic == "TALK_TRAIN" ) {
@@ -1662,7 +1671,7 @@ void dialogue::gen_responses( const talk_topic &the_topic )
             return;
         }
     }
-    avatar &you = get_avatar();
+    player &you = *alpha;
     if( topic == "TALK_MISSION_LIST" ) {
         if( p->chatbin.missions.size() == 1 ) {
             add_response( _( "Tell me about it." ), "TALK_MISSION_OFFER",
@@ -2191,78 +2200,117 @@ talk_topic dialogue::opt( dialogue_window &d_win, const std::string &npc_name,
         response_lines.push_back( responses[i].create_option_line( *this, 'a' + i ) );
     }
     auto selected_response = size_t{ 0 };
+    int ch = -1;
+    // Kept until the response's effects are done, like the player's window.
+    std::optional<ui_adaptor> ui;
 
+    if( cata_mp::remote_prompts_active() ) {
+        // Co-op: the remote player whose character talks picks the response
+        // on their own screen.
+        bool repeat = false;
+        bool okay = false;
+        do {
+            const auto answer = cata_mp::remote_talk( {
+                .npc_name = npc_name,
+                .challenge = challenge,
+                .responses = response_lines,
+                .repeat = repeat,
+            } );
+            repeat = true;
+            if( !answer ) {
+                return talk_topic( "TALK_DONE" );
+            }
+            if( answer->special != 0 ) {
+                const auto &st = special_talk( answer->special );
+                if( st.id != "TALK_NONE" ) {
+                    return st;
+                }
+                continue;
+            }
+            ch = answer->index;
+            if( ch < 0 || ch >= static_cast<int>( responses.size() ) ) {
+                return talk_topic( "TALK_DONE" );
+            }
+            okay = true;
+            const auto consequences = responses[ch].get_consequences( *this );
+            if( consequences.contains( dialogue_consequence::hostile ) ) {
+                okay = query_yn( _( "You may be attacked!  Proceed?" ) );
+            } else if( consequences.contains( dialogue_consequence::helpless ) ) {
+                okay = query_yn( _( "You'll be helpless!  Proceed?" ) );
+            }
+        } while( !okay );
+    } else {
 #if defined(__ANDROID__)
-    input_context ctxt( "DIALOGUE_CHOOSE_RESPONSE" );
-    for( size_t i = 0; i < responses.size(); i++ ) {
-        ctxt.register_manual_key( 'a' + i );
-    }
-    ctxt.register_manual_key( 'L', "Look at" );
-    ctxt.register_manual_key( 'S', "Size up stats" );
-    ctxt.register_manual_key( 'Y', "Yell" );
-    ctxt.register_manual_key( 'O', "Check opinion" );
+        input_context ctxt( "DIALOGUE_CHOOSE_RESPONSE" );
+        for( size_t i = 0; i < responses.size(); i++ ) {
+            ctxt.register_manual_key( 'a' + i );
+        }
+        ctxt.register_manual_key( 'L', "Look at" );
+        ctxt.register_manual_key( 'S', "Size up stats" );
+        ctxt.register_manual_key( 'Y', "Yell" );
+        ctxt.register_manual_key( 'O', "Check opinion" );
 #endif
 
-    ui_adaptor ui;
-    ui.on_screen_resize( [&]( ui_adaptor & ui ) {
-        d_win.resize_dialogue( ui );
-    } );
-    ui.mark_resize();
+        ui.emplace();
+        ui->on_screen_resize( [&]( ui_adaptor & ui ) {
+            d_win.resize_dialogue( ui );
+        } );
+        ui->mark_resize();
 
-    ui.on_redraw( [&]( const ui_adaptor & ) {
-        d_win.print_header( npc_name );
-        d_win.display_responses( response_lines, selected_response );
-    } );
+        ui->on_redraw( [&]( const ui_adaptor & ) {
+            d_win.print_header( npc_name );
+            d_win.display_responses( response_lines, selected_response );
+        } );
 
-    int ch;
-    bool okay;
-    const auto response_count = responses.size();
-    do {
-        d_win.refresh_response_display();
+        bool okay;
+        const auto response_count = responses.size();
         do {
-            ui_manager::redraw();
-            ch = inp_mngr.get_input_event().get_first_input();
-            if( ch == KEY_UP ) {
-                if( selected_response > 0 ) {
-                    selected_response -= 1;
+            d_win.refresh_response_display();
+            do {
+                ui_manager::redraw();
+                ch = inp_mngr.get_input_event().get_first_input();
+                if( ch == KEY_UP ) {
+                    if( selected_response > 0 ) {
+                        selected_response -= 1;
+                    } else {
+                        selected_response = response_count - 1;
+                    }
+                    continue;
+                }
+                if( ch == KEY_DOWN ) {
+                    if( selected_response + 1 < response_count ) {
+                        selected_response += 1;
+                    } else {
+                        selected_response = 0;
+                    }
+                    continue;
+                }
+                if( ch == KEY_PPAGE || ch == KEY_NPAGE ) {
+                    const auto scroll_entry_index = d_win.handle_scrolling( ch );
+                    if( scroll_entry_index ) {
+                        selected_response = *scroll_entry_index;
+                    }
+                    continue;
+                }
+                auto st = special_talk( ch );
+                if( st.id != "TALK_NONE" ) {
+                    return st;
+                }
+                if( ch == KEY_ENTER || ch == '\n' || ch == '\r' ) {
+                    ch = static_cast<int>( selected_response );
                 } else {
-                    selected_response = response_count - 1;
+                    ch -= 'a';
                 }
-                continue;
+            } while( ( ch < 0 || ch >= static_cast<int>( response_count ) ) );
+            okay = true;
+            std::set<dialogue_consequence> consequences = responses[ch].get_consequences( *this );
+            if( consequences.contains( dialogue_consequence::hostile ) ) {
+                okay = query_yn( _( "You may be attacked!  Proceed?" ) );
+            } else if( consequences.contains( dialogue_consequence::helpless ) ) {
+                okay = query_yn( _( "You'll be helpless!  Proceed?" ) );
             }
-            if( ch == KEY_DOWN ) {
-                if( selected_response + 1 < response_count ) {
-                    selected_response += 1;
-                } else {
-                    selected_response = 0;
-                }
-                continue;
-            }
-            if( ch == KEY_PPAGE || ch == KEY_NPAGE ) {
-                const auto scroll_entry_index = d_win.handle_scrolling( ch );
-                if( scroll_entry_index ) {
-                    selected_response = *scroll_entry_index;
-                }
-                continue;
-            }
-            auto st = special_talk( ch );
-            if( st.id != "TALK_NONE" ) {
-                return st;
-            }
-            if( ch == KEY_ENTER || ch == '\n' || ch == '\r' ) {
-                ch = static_cast<int>( selected_response );
-            } else {
-                ch -= 'a';
-            }
-        } while( ( ch < 0 || ch >= static_cast<int>( response_count ) ) );
-        okay = true;
-        std::set<dialogue_consequence> consequences = responses[ch].get_consequences( *this );
-        if( consequences.contains( dialogue_consequence::hostile ) ) {
-            okay = query_yn( _( "You may be attacked!  Proceed?" ) );
-        } else if( consequences.contains( dialogue_consequence::helpless ) ) {
-            okay = query_yn( _( "You'll be helpless!  Proceed?" ) );
-        }
-    } while( !okay );
+        } while( !okay );
+    }
 
     talk_response chosen = responses[ch];
     std::string response_printed = string_format( pgettext( "you say something", "%s: %s" ),
@@ -3813,8 +3861,9 @@ std::string give_item_to( npc &p, bool allow_use )
     if( p.is_hallucination() ) {
         return _( "No thanks, I'm good." );
     }
-    avatar &you = get_avatar();
-    item *loc = game_menus::inv::titled_menu( you, _( "Offer what?" ),
+    // Co-op: a remote player offers from their character (the menu asks them).
+    player &you = cata_mp::acting_player();
+    item *loc = game_menus::inv::titled_menu( get_avatar(), _( "Offer what?" ),
                 _( "You have no items to offer." ) );
     if( !loc ) {
         return _( "Changed your mind?" );
