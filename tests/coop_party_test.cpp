@@ -58,9 +58,11 @@ TEST_CASE("remote players' kills count as the player's", "[coop][kill_tracker]")
 TEST_CASE("hurting an npc as a remote player makes it hostile", "[coop][npc]") {
     clear_all_state();
     const auto hosting = hosting_scope{};
-    npc& player2 = spawn_remote_player(tripoint_bub_ms{60, 60, 0});
+    // Resetting a character puts it on a fixed spot: the stranger first.
     npc& stranger = spawn_npc(tripoint_bub_ms{61, 60, 0}, "test_talker");
     clear_character(stranger);
+    stranger.setpos(tripoint_bub_ms{61, 60, 0});
+    npc& player2 = spawn_remote_player(tripoint_bub_ms{60, 60, 0});
     REQUIRE_FALSE(stranger.is_enemy());
 
     stranger.apply_damage(&player2, bodypart_id("torso"), 1);
