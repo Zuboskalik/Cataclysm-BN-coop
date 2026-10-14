@@ -82,7 +82,7 @@ TEST_CASE("a place any player reaches completes a shared mission", "[coop][missi
 
 TEST_CASE("which way a creature looks survives serialization", "[coop][monster]") {
     clear_all_state();
-    monster& zombie = spawn_test_monster("mon_zombie", tripoint_bub_ms{60, 60, 0});
+    monster& zombie = spawn_test_monster("mon_zombie", tripoint_bub_ms{66, 63, 0});
     zombie.facing = FD_LEFT;
 
     std::ostringstream os;
