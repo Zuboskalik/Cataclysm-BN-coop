@@ -22,6 +22,7 @@
 #include "inventory.h"
 #include "item.h"
 #include "line.h"
+#include "mp_session.h"
 #include "output.h"
 #include "player_activity.h"
 #include "string_formatter.h"
@@ -781,6 +782,13 @@ void show_armor_layers_ui( Character &who )
         const std::string action = ctxt.handle_input();
         if( who.is_npc() && action == "ASSIGN_INVLETS" ) {
             // It doesn't make sense to assign invlets to NPC items
+            continue;
+        }
+        // Co-op: a client sorts a copy of its character; the host applies the
+        // new order, but putting on and taking off are actions of their own.
+        if( cata_mp::is_client() && ( action == "EQUIP_ARMOR" || action == "EQUIP_ARMOR_HERE" ||
+                                      action == "REMOVE_ARMOR" || action == "ASSIGN_INVLETS" ) ) {
+            popup( _( "In co-op, put clothes on and take them off with the wear and take off keys." ) );
             continue;
         }
 

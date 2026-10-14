@@ -2301,6 +2301,56 @@ action_result do_style( npc &guy, const JsonObject &jo )
     return action_result{};
 }
 
+// Armor layers: the order the player arranged their clothes in on their
+// screen, as [index in the current order, type, side, hidden].
+action_result do_armor_layers( npc &guy, const JsonObject &jo )
+{
+    std::vector<item *> current;
+    for( item *it : guy.worn ) {
+        current.push_back( it );
+    }
+    std::vector<item *> wanted;
+    std::vector<JsonArray> entries;
+    for( JsonArray e : jo.get_array( "order" ) ) {
+        const int index = e.get_int( 0 );
+        if( index < 0 || index >= static_cast<int>( current.size() ) ||
+            current[index]->typeId().str() != e.get_string( 1 ) ||
+            std::ranges::find( wanted, current[index] ) != wanted.end() ) {
+            return fail( _( "Your clothes changed meanwhile." ) );
+        }
+        wanted.push_back( current[index] );
+        entries.push_back( e );
+    }
+    if( wanted.size() != current.size() ) {
+        return fail( _( "Your clothes changed meanwhile." ) );
+    }
+    // Put each item in its place by swapping, as the armor screen does.
+    for( size_t i = 0; i < wanted.size(); ++i ) {
+        auto target = std::next( guy.worn.begin(), static_cast<std::ptrdiff_t>( i ) );
+        if( *target == wanted[i] ) {
+            continue;
+        }
+        auto from = std::find( std::next( target ), guy.worn.end(), wanted[i] );
+        if( from != guy.worn.end() ) {
+            std::swap( *target, *from );
+        }
+    }
+    for( size_t i = 0; i < wanted.size(); ++i ) {
+        item &it = *wanted[i];
+        const auto wanted_side = static_cast<side>( entries[i].get_int( 2 ) );
+        if( it.is_sided() && it.get_side() != wanted_side ) {
+            guy.change_side( it, false );
+        }
+        if( entries[i].get_bool( 3 ) ) {
+            it.set_flag( flag_id( "HIDDEN" ) );
+        } else {
+            it.unset_flag( flag_id( "HIDDEN" ) );
+        }
+    }
+    guy.reset_encumbrance();
+    return action_result{};
+}
+
 // Talks to an NPC (C, "Talk to whom?").  The conversation runs here with the
 // player's character; its windows show up on the player's screen.
 action_result do_talk( npc &guy, const JsonObject &jo )
@@ -2471,6 +2521,9 @@ action_result execute( peer_t &p, npc &guy, message &m )
     }
     if( a == "talk" ) {
         return do_talk( guy, jo );
+    }
+    if( a == "armor_layers" ) {
+        return do_armor_layers( guy, jo );
     }
     return fail( _( "That action is not available in co-op yet." ) );
 }

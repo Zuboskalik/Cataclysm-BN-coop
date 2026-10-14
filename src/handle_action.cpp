@@ -1936,8 +1936,9 @@ bool game::handle_action()
     user_turn current_turn;
     {
         ZoneScopedN( "handle_action_get_action" );
-        // Check if we have an auto-move destination
-        if( u.has_destination() ) {
+        // Check if we have an auto-move destination (a co-op client walks
+        // only when it is its turn; otherwise it waits for input as usual)
+        if( u.has_destination() && cata_mp::can_auto_move() ) {
             ZoneScopedN( "handle_action_get_auto_move" );
             act = u.get_next_auto_move_direction();
             if( act == ACTION_NULL ) {

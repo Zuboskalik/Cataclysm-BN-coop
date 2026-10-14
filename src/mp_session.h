@@ -108,6 +108,11 @@ bool client_intercept_action( action_id act, const std::optional<tripoint_bub_ms
 // if `act` must not run now.
 bool host_blocks_action( action_id act );
 
+// Client: whether a walk to a clicked spot may take its next step now (it is
+// our turn and the host is not busy with our previous action).  Always true
+// outside a client.
+bool can_auto_move();
+
 // Client never simulates the world; these gates turn simulation side effects
 // off (monster spawning, NPC loading, saving, activity time skipping).
 bool suppress_world_simulation();

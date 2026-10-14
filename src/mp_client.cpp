@@ -16,6 +16,7 @@
 #include <unordered_map>
 
 #include "activity_actor_definitions.h"
+#include "armor_layers.h"
 #include "avatar.h"
 #include "bionics.h"
 #include "calendar.h"
@@ -478,7 +479,13 @@ void apply_state( message &m )
     }
 
     // Our own character first: the local map is always centered on it.
+    // Where we walk to after a click on the map is ours, not the host's: keep
+    // it (in absolute coordinates, the map may move) over reloading our copy.
+    std::vector<tripoint_abs_ms> walk_route;
     if( jo.has_member( "you" ) ) {
+        for( const tripoint_bub_ms &step : u.get_auto_move_route() ) {
+            walk_route.push_back( bub_to_abs( step ) );
+        }
         try {
             u.mp_mirror_load( *jo.get_raw( "you" ) );
             u.controlling_vehicle = jo.get_bool( "driving", false );
@@ -508,6 +515,13 @@ void apply_state( message &m )
                               S.mission_current );
     }
     recenter_map();
+    if( !walk_route.empty() && !u.has_destination() ) {
+        std::vector<tripoint_bub_ms> route;
+        for( const tripoint_abs_ms &step : walk_route ) {
+            route.push_back( abs_to_bub( step ) );
+        }
+        u.set_destination( route );
+    }
     const int new_z = u.abs_pos().z();
     if( new_z != old_z ) {
         mp_client_game_access::vertical_shift( *g, old_z, new_z );
@@ -1322,6 +1336,38 @@ void request_style()
         return;
     }
     send_action( "style", extra );
+}
+
+// Armor layers: the game's own screen on our copy of the character; the new
+// order (with sides and hidden clothes) goes to the host.
+void request_armor_layers()
+{
+    avatar &u = get_avatar();
+    std::vector<const item *> before;
+    for( const item *it : u.worn ) {
+        before.push_back( it );
+    }
+    show_armor_layers_ui( u );
+    // Sides and hidden clothes count too, so the order is sent as it is.
+    std::string order;
+    int position = 0;
+    for( const item *it : u.worn ) {
+        const auto found = std::ranges::find( before, it );
+        if( found == before.end() ) {
+            // Our copy changed under us; better send nothing.
+            return;
+        }
+        const int index = static_cast<int>( found - before.begin() );
+        order += order.empty() ? "" : ",";
+        order += string_format( "[%d,%s,%d,%s]", index, json_quote( it->typeId().str() ),
+                                static_cast<int>( it->get_side() ),
+                                it->has_flag( flag_id( "HIDDEN" ) ) ? "true" : "false" );
+        ++position;
+    }
+    if( before.size() != static_cast<size_t>( position ) ) {
+        return;
+    }
+    send_action( "armor_layers", ",\"order\":[" + order + "]" );
 }
 
 bool is_local_ui_action( action_id act )
@@ -2526,6 +2572,9 @@ bool client_intercept_action( action_id act,
         case ACTION_PICK_STYLE:
             client::request_style();
             return true;
+        case ACTION_SORT_ARMOR:
+            client::request_armor_layers();
+            return true;
         default:
             add_msg( m_info, _( "That action is not available in co-op yet." ) );
             return true;
@@ -2536,6 +2585,12 @@ bool client_intercept_action( action_id act,
 
 namespace cata_mp
 {
+bool can_auto_move()
+{
+    return !is_client() || ( client::S.my_turn && !client::S.awaiting_ack && !client::S.waiting &&
+                             !client::S.busy );
+}
+
 bool input_should_return()
 {
     return is_client() && ( client::S.leaving || client::S.reconnecting );
