@@ -18,6 +18,8 @@
 
 # Visual Studio project files, leave them alone.
 *.cmd     -text
+# cmd.exe needs CRLF line endings in batch files.
+*.bat     text eol=crlf
 *.filters -text
 *.sln     -text
 *.user    -text

@@ -1,4 +1,5 @@
 @echo off
+setlocal
 rem Local helper: packs the Release build into a zip like the official CI does.
 rem Usage: package-coop.bat <version-label> [official-bn-folder]
 rem   official-bn-folder defaults to cbn-windows-tiles-x64-msvc-v0.13.0 next to this repository
@@ -14,7 +15,9 @@ if "%1"=="" (
 set OFFICIAL=%~2
 for %%I in ("%~dp0..") do set PROJECT_DIR=%%~fI
 if "%OFFICIAL%"=="" set OFFICIAL=%PROJECT_DIR%\cbn-windows-tiles-x64-msvc-v0.13.0
-call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul
+rem The Visual Studio environment only once per console: calling VsDevCmd again
+rem keeps growing PATH until cmd fails with "The input line is too long".
+if not defined VSCMD_VER call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul
 cd /d %~dp0
 set DIST=%~dp0out\dist\cataclysmbn-%1
 if exist "%DIST%" rmdir /s /q "%DIST%"
