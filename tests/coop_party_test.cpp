@@ -63,8 +63,9 @@ TEST_CASE("hurting an npc as a remote player makes it hostile", "[coop][npc]") {
 TEST_CASE("a place any player reaches completes a shared mission", "[coop][mission]") {
     clear_all_state();
     const auto hosting = hosting_scope{};
-    get_avatar().setpos(tripoint_bub_ms{10, 10, 0});
-    npc& player2 = spawn_remote_player(tripoint_bub_ms{120, 120, 0});
+    npc& player2 = spawn_remote_player(tripoint_bub_ms{60, 60, 0});
+    // A few overmap tiles away from player 2.
+    get_avatar().setpos(player2.abs_pos() + tripoint_rel_ms(-72, -72, 0));
 
     mission* miss = mission::reserve_new(mission_type_id("MISSION_REACH_SAFETY"), character_id());
     REQUIRE(miss != nullptr);
