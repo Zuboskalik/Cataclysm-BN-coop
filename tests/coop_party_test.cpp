@@ -1,4 +1,6 @@
 #include "avatar.h"
+#include "avatar_action.h"
+#include "map/map.h"
 #include "bodypart.h"
 #include "catch/catch.hpp"
 #include "event.h"
@@ -164,3 +166,48 @@ TEST_CASE("three remote players can join at once", "[coop][drop_in]") {
     cata_mp::host_end_of_turn();
     CHECK(cata_mp::party_members().size() == 1);
 }
+
+TEST_CASE("the host running leaves an idle remote player's stamina alone", "[coop][stamina]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    avatar& you = get_avatar();
+    clear_character(you);
+    you.setpos(tripoint_bub_ms{60, 60, 0});
+    const auto name = std::string("Idle Runner");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(930, "test");
+    cata_mp::host::handle_line(
+        930,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        930, R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+    const auto proxy = [&name]() -> npc* {
+        for (npc& guy : g->all_npcs()) {
+            if (guy.get_value("coop_player") == name) { return &guy; }
+        }
+        return nullptr;
+    };
+    REQUIRE(proxy() != nullptr);
+    proxy()->set_stamina(proxy()->get_stamina_max() / 2);
+    const auto before = proxy()->get_stamina();
+    // The remote player stands still for the whole test.
+    cata_mp::host::handle_line(930, R"({"t":"act","seq":1,"a":"wait","turns":1000})");
+    you.set_movement_mode(CMM_RUN);
+    REQUIRE(you.movement_mode_is(CMM_RUN));
+
+    map& here = get_map();
+    for (auto step = 0; step < 20; ++step) {
+        you.set_moves(100);
+        avatar_action::move(you, here, step % 2 == 0 ? tripoint_rel_ms::north() : tripoint_rel_ms::south());
+        you.set_moves(0);
+        g->do_turn();
+        REQUIRE(proxy() != nullptr);
+    }
+    INFO("stamina before " << before << ", after " << proxy()->get_stamina());
+    CHECK(proxy()->get_stamina() >= before);
+
+    cata_mp::host::handle_closed(930, "test over");
+    cata_mp::host_end_of_turn();
+}
+
