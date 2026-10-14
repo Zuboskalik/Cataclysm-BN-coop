@@ -3179,6 +3179,12 @@ static bool cancel_auto_move( Character &who, const std::string &text )
 
 bool game::cancel_activity_or_ignore_query( const distraction_type type, const std::string &text )
 {
+    // Co-op: a client's character is a copy; the host asks its player.
+    if( cata_mp::is_client() ) {
+        return false;
+    }
+    // Co-op: about the host's own activity, even during a remote player's action.
+    const cata_mp::local_prompts_scope host_question;
     invalidate_main_ui_adaptor();
     if( ( !u.activity && !u.has_distant_destination() ) ||
         u.activity->is_distraction_ignored( type ) ) {
@@ -3237,6 +3243,12 @@ bool game::cancel_activity_or_ignore_query( const distraction_type type, const s
 
 bool game::cancel_activity_query( const std::string &text )
 {
+    // Co-op: a client's character is a copy; the host asks its player.
+    if( cata_mp::is_client() ) {
+        return false;
+    }
+    // Co-op: about the host's own activity, even during a remote player's action.
+    const cata_mp::local_prompts_scope host_question;
     invalidate_main_ui_adaptor();
     if( u.has_distant_destination() ) {
         if( cancel_auto_move( u, text ) ) {

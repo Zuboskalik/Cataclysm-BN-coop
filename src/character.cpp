@@ -10336,6 +10336,11 @@ void Character::on_hurt( Creature *source, bool disturb /*= true*/ )
             } else {
                 g->cancel_activity_or_ignore_query( distraction_type::attacked, _( "You were hurt!" ) );
             }
+        } else if( cata_mp::is_proxy( *this ) && !has_effect( effect_narcosis ) ) {
+            // Co-op: a remote player is asked before their character's next turn.
+            cata_mp::proxy_distraction( *this, distraction_type::attacked, source != nullptr ?
+                                        string_format( _( "You were attacked by %s!" ), source->disp_name() ) :
+                                        std::string( _( "You were hurt!" ) ) );
         }
     }
 }

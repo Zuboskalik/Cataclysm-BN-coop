@@ -22,6 +22,7 @@
 #include "coordinates.h"
 
 class Character;
+enum class distraction_type;
 class item;
 class JsonIn;
 class main_menu;
@@ -196,6 +197,24 @@ std::optional<remote_talk_answer> remote_talk( const remote_talk_request &req );
 // Host: the remote player trades with `np` in the trade window on their own
 // screen; their deal is applied to `state`.  False if they cancelled.
 bool remote_trade( npc &np, npc_trading::trade_state &state, int cost, const std::string &deal );
+
+// ---- interrupting activities --------------------------------------------------
+// Host: something would interrupt what a remote player's character is doing
+// (the player's "Stop?" question).  The player is asked before that
+// character's next turn, and everybody waits for the answer.
+void proxy_distraction( Character &who, distraction_type type, const std::string &text );
+// Host: questions about the avatar's own activity stay on the host's screen,
+// even while a remote player's action runs.
+class local_prompts_scope
+{
+    public:
+        local_prompts_scope();
+        ~local_prompts_scope();
+        local_prompts_scope( const local_prompts_scope & ) = delete;
+        auto operator=( const local_prompts_scope & ) -> local_prompts_scope & = delete; // *NOPAD*
+    private:
+        int saved_ = -1;
+};
 
 // Host: features that skip turns in bulk would skip remote players' turns too.
 bool suppress_time_skipping();

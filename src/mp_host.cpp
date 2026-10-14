@@ -137,6 +137,11 @@ struct peer_t {
     bool dont_wait = false;
     // Turns in a row the character's activity did not use any moves.
     int stalled_activity_turns = 0;
+    // Something that would interrupt the character's activity; the player is
+    // asked whether to stop before the character's next turn.
+    std::optional<std::pair<distraction_type, std::string>> distraction;
+    // Hostiles the character saw last turn (a new one interrupts).
+    int seen_hostiles = 0;
 
     // What this client already has, by content hash.
     std::map<tripoint_abs_sm, size_t> sm_sent;
@@ -2256,6 +2261,81 @@ action_result execute( peer_t &p, npc &guy, message &m )
     return fail( _( "That action is not available in co-op yet." ) );
 }
 
+// Within this distance a hostile interrupts whatever the character does, as
+// it does for the player.
+constexpr int dangerous_proximity = 5;
+
+// What the game warns the player about while busy: hostiles coming into view
+// or coming close.  Checked once per turn of the character.
+void watch_for_distractions( npc &guy, peer_t &p )
+{
+    const std::vector<Creature *> hostiles = [&guy] {
+        auto seen = guy.get_visible_creatures( MAX_VIEW_DISTANCE );
+        std::erase_if( seen, [&guy]( const Creature * c )
+        {
+            return guy.attitude_to( *c ) != Attitude::A_HOSTILE;
+        } );
+        return seen;
+    }();
+    const int seen = static_cast<int>( hostiles.size() );
+    const bool busy = guy.activity && *guy.activity && guy.activity->id() != activity_id( "ACT_AIM" );
+    if( busy && !p.distraction ) {
+        const auto close = std::ranges::find_if( hostiles, [&guy]( const Creature * c ) {
+            return rl_dist( guy.bub_pos(), c->bub_pos() ) <= dangerous_proximity;
+        } );
+        if( close != hostiles.end() ) {
+            p.distraction = std::make_pair( distraction_type::hostile_spotted_near,
+                                            string_format( _( "The %s is dangerously close!" ), ( *close )->get_name() ) );
+        } else if( seen > p.seen_hostiles ) {
+            p.distraction = std::make_pair( distraction_type::hostile_spotted_far,
+                                            seen - p.seen_hostiles == 1 ?
+                                            string_format( _( "%s spotted!" ), hostiles.back()->get_name() ) :
+                                            std::string( _( "Monsters spotted!" ) ) );
+        }
+    }
+    p.seen_hostiles = seen;
+}
+
+// Asks the player whether their character should stop what it is doing, like
+// the player is asked.  The game waits for the answer.  Returns true if the
+// activity was stopped.
+bool ask_about_distraction( npc &guy, const int peer_id )
+{
+    peer_t *p = find_peer( peer_id );
+    if( p == nullptr || !p->distraction ) {
+        return false;
+    }
+    const auto [type, text] = *p->distraction;
+    p->distraction.reset();
+    if( !guy.activity || !*guy.activity || guy.activity->is_distraction_ignored( type ) ) {
+        return false;
+    }
+    int pick = -1;
+    {
+        prompt_scope questions( peer_id );
+        pick = remote_choice( string_format( "%s %s", text, guy.activity->get_stop_phrase() ), {
+            _( "Yes" ), _( "No" ), _( "Ignore" )
+        }, {}, false );
+    }
+    if( pick == 0 ) {
+        guy.cancel_activity();
+        // Some activities don't end on cancel for an NPC; the player asked
+        // to stop, so stop.
+        if( guy.activity && *guy.activity ) {
+            guy.activity = std::make_unique<player_activity>();
+        }
+        guy.backlog.clear();
+        return true;
+    }
+    if( pick == 2 && guy.activity && *guy.activity ) {
+        guy.activity->ignore_distraction( type );
+        for( auto &activity : guy.backlog ) {
+            activity->ignore_distraction( type );
+        }
+    }
+    return false;
+}
+
 // Waits for the next action of player `peer_id`.  Returns false if the player
 // left, or the host decided to skip the turn.
 bool wait_for_action( int peer_id )
@@ -2603,6 +2683,7 @@ bool host_proxy_turn( npc &guy )
     // that for the avatar.
     if( guy.get_moves() > 0 ) {
         character_funcs::search_surroundings( guy );
+        host::watch_for_distractions( guy, *p );
     }
     int guard = 0;
     while( !guy.is_dead() && guy.get_moves() > 0 && guard++ < 64 ) {
@@ -2610,6 +2691,11 @@ bool host_proxy_turn( npc &guy )
         if( p == nullptr || !p->joined ) {
             guy.set_moves( 0 );
             break;
+        }
+        // Something interrupts what the character is doing: its player
+        // decides, and everybody waits for them.
+        if( host::ask_about_distraction( guy, peer_id ) ) {
+            continue;
         }
         // Long actions (dropping into a container, eating...) keep going on
         // their own, exactly like they do for the player character.
@@ -2841,6 +2927,28 @@ void share_message( const int type, const std::string &text )
             host::send_to_player( p, static_cast<game_message_type>( type ), remove_color_tags( text ) );
         }
     }
+}
+
+void proxy_distraction( Character &who, const distraction_type type, const std::string &text )
+{
+    if( !is_host() || !is_proxy( who ) || !who.activity || !*who.activity ||
+        who.activity->is_distraction_ignored( type ) ) {
+        return;
+    }
+    host::peer_t *p = host::peer_of_proxy( who.getID() );
+    if( p != nullptr && !p->distraction ) {
+        p->distraction = std::make_pair( type, text );
+    }
+}
+
+local_prompts_scope::local_prompts_scope() : saved_( host::prompt_peer )
+{
+    host::prompt_peer = -1;
+}
+
+local_prompts_scope::~local_prompts_scope()
+{
+    host::prompt_peer = saved_;
 }
 
 bool remote_prompts_active()
