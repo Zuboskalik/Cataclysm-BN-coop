@@ -70,6 +70,8 @@
 #include "translations.h"
 #include "ui.h"
 #include "ui_manager.h"
+#include "overmap/overmap_ui.h"
+#include "uistate.h"
 #include "trade_win.h"
 #include "trap.h"
 #include "vehicle/veh_interact.h"
@@ -660,6 +662,8 @@ void apply_state( message &m )
     mp_client_game_access::reset_light_level( *g );
     here.invalidate_visibility_caches();
     here.build_map_cache( u.abs_pos().z() );
+    // Items of our character or on the map may have been replaced.
+    u.invalidate_crafting_inventory();
     S.got_state = true;
     g->invalidate_main_ui_adaptor();
 }
@@ -1539,7 +1543,27 @@ void answer_question( message &m )
     const int id = jo.get_int( "id", 0 );
     const std::string kind = jo.get_string( "kind", "choice" );
     std::string reply;
-    if( kind == "talk" ) {
+    if( kind == "omap" ) {
+        // An item that reveals the map, used by our character: the overmap
+        // around the spot it shows, as the host knows it.
+        overmapbuffer &omb = get_overmapbuffer( get_avatar().get_dimension() );
+        for( JsonArray e : jo.get_array( "tiles" ) ) {
+            const tripoint_abs_omt op( e.get_int( 0 ), e.get_int( 1 ), e.get_int( 2 ) );
+            const oter_str_id id( e.get_string( 3 ) );
+            if( id.is_valid() ) {
+                omb.ter_set( op, id.id() );
+                omb.set_seen( op, true );
+            }
+        }
+        uistate.overmap_highlighted_omts.clear();
+        for( JsonArray e : jo.get_array( "marks" ) ) {
+            uistate.overmap_highlighted_omts.emplace( e.get_int( 0 ), e.get_int( 1 ), e.get_int( 2 ) );
+        }
+        ui::omap::choose_point( tripoint_abs_omt( jo.get_int( "x" ), jo.get_int( "y" ),
+                                jo.get_int( "z" ) ) );
+        uistate.overmap_highlighted_omts.clear();
+        reply = ",\"ok\":true";
+    } else if( kind == "talk" ) {
         reply = answer_talk( jo );
     } else if( kind == "trade" ) {
         reply = answer_trade( jo );
@@ -2055,6 +2079,11 @@ bool join_game()
 
 bool client_do_turn()
 {
+    // The game caches what a character can craft with (nearby items and
+    // temporary tool items) for the current turn.  A client goes round this
+    // loop many times per turn of the host, freeing temporary items and
+    // replacing map items in between, so the cache must not outlive a pass.
+    get_avatar().invalidate_crafting_inventory();
     if( S.reconnecting && !S.leaving ) {
         S.reconnecting = false;
         if( !client::try_reconnect() ) {
