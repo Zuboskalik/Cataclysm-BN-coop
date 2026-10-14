@@ -82,6 +82,7 @@
 #include "type_id.h"
 #include "ui.h"
 #include "ui_manager.h"
+#include "uistate.h"
 #include "vehicle/vehicle.h"
 #include "weather/weather.h"
 #include "vehicle/vpart_position.h"
@@ -3589,6 +3590,36 @@ bool remote_trade( npc &np, npc_trading::trade_state &state, const int cost,
         return false;
     }
     return true;
+}
+
+void remote_show_overmap( const tripoint_abs_omt &center )
+{
+    player *actor = remote_actor();
+    if( actor == nullptr ) {
+        return;
+    }
+    // The overmap the player knows around that spot, and what is highlighted.
+    constexpr int view_radius = 45;
+    overmapbuffer &omb = get_overmapbuffer( actor->get_dimension() );
+    std::string tiles;
+    for( int dx = -view_radius; dx <= view_radius; ++dx ) {
+        for( int dy = -view_radius; dy <= view_radius; ++dy ) {
+            const tripoint_abs_omt op( center.x() + dx, center.y() + dy, center.z() );
+            if( !omb.seen( op ) ) {
+                continue;
+            }
+            tiles += tiles.empty() ? "" : ",";
+            tiles += string_format( "[%d,%d,%d,%s]", op.x(), op.y(), op.z(),
+                                    json_quote( omb.ter( op ).id().str() ) );
+        }
+    }
+    std::string marks;
+    for( const tripoint_abs_omt &op : uistate.overmap_highlighted_omts ) {
+        marks += marks.empty() ? "" : ",";
+        marks += string_format( "[%d,%d,%d]", op.x(), op.y(), op.z() );
+    }
+    ask_remote( "omap", string_format( ",\"x\":%d,\"y\":%d,\"z\":%d,\"tiles\":[%s],\"marks\":[%s]",
+                                       center.x(), center.y(), center.z(), tiles, marks ) );
 }
 
 std::optional<tripoint_bub_ms> remote_tile( const std::string &prompt )

@@ -62,6 +62,7 @@
 #include "memory_fast.h"
 #include "messages.h"
 #include "monster.h"
+#include "mp_session.h"
 #include "morale_types.h"
 #include "mtype.h"
 #include "mutation.h"
@@ -1643,6 +1644,14 @@ void reveal_map_actor::reveal_targets( const tripoint_abs_omt &map ) const
 void reveal_map_actor::show_revealed( player &p, item &item, const tripoint_abs_omt &center ) const
 {
     uistate.overmap_highlighted_omts.clear();
+    // Co-op: a remote player sees the map on their own screen.
+    const auto show_map_point = []( const tripoint_abs_omt & pt ) {
+        if( cata_mp::remote_prompts_active() ) {
+            cata_mp::remote_show_overmap( pt );
+        } else {
+            ui::omap::choose_point( pt );
+        }
+    };
 
     omt_find_params params{};
     params.search_range = { 0, radius };
@@ -1705,7 +1714,7 @@ void reveal_map_actor::show_revealed( player &p, item &item, const tripoint_abs_
 
     // Only one overmap tile of type
     if( sz == 1 ) {
-        ui::omap::choose_point( eqRange.first->second );
+        show_map_point( eqRange.first->second );
         return;
     }
 
@@ -1722,7 +1731,7 @@ void reveal_map_actor::show_revealed( player &p, item &item, const tripoint_abs_
         // Pick random
         auto it = eqRange.first;
         std::advance( it, rng( 0, sz - 1 ) );
-        ui::omap::choose_point( it->second );
+        show_map_point( it->second );
     } else {
         // Pick closest
         const auto pred_dist = [&]( const std::pair<std::string, tripoint_abs_omt> &a,
@@ -1732,7 +1741,7 @@ void reveal_map_actor::show_revealed( player &p, item &item, const tripoint_abs_
             return da < db;
         };
         const auto it = std::min_element( eqRange.first, eqRange.second, pred_dist );
-        ui::omap::choose_point( it->second );
+        show_map_point( it->second );
     }
 }
 

@@ -144,6 +144,9 @@ std::vector<std::pair<int, int>> remote_choose_many( const std::string &title,
 std::optional<tripoint_bub_ms> remote_target( const std::string &prompt, int range );
 // The remote player picks a map tile (like game::look_around).
 std::optional<tripoint_bub_ms> remote_tile( const std::string &message );
+// The remote player looks at the overmap around `center` (an item that
+// reveals the map); what they need to see of it is sent along.
+void remote_show_overmap( const tripoint_abs_omt &center );
 // Picking up items at `pos` is the remote player's: they choose, their
 // character takes them.  Returns false when no remote action is running.
 bool remote_pickup( const tripoint_bub_ms &pos );
