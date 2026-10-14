@@ -2593,7 +2593,12 @@ bool can_auto_move()
 
 bool input_should_return()
 {
-    return is_client() && ( client::S.leaving || client::S.reconnecting );
+    if( !is_client() ) {
+        return false;
+    }
+    // A walk to a clicked spot goes on by itself once it is our turn again.
+    return client::S.leaving || client::S.reconnecting ||
+           ( get_avatar().has_destination() && can_auto_move() );
 }
 } // namespace cata_mp
 

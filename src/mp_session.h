@@ -83,7 +83,8 @@ std::string menu_hint();
 void on_turn_start();
 // Client replacement for game::do_turn.  Return value has the same meaning.
 bool client_do_turn();
-// A client that is leaving or reconnecting needs its input loop to return.
+// A client that is leaving or reconnecting, or that walks to a clicked spot
+// and may take its next step, needs its input loop to return.
 bool input_should_return();
 // Services the network without blocking.  Returns true if anything visible
 // changed (the caller should redraw).  Safe to call from any input loop.
