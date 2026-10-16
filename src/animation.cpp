@@ -1,4 +1,5 @@
 #include "animation.h"
+#include "mp_session.h"
 
 #include "avatar.h"
 #include "cached_options.h"
@@ -302,6 +303,7 @@ auto get_bullet_dir( const std::vector<tripoint_bub_ms> &trajectory, size_t i ) 
 void explosion_handler::draw_explosion( const tripoint_bub_ms &p, const int r, const nc_color &col,
                                         const std::string &exp_name )
 {
+    cata_mp::share_explosion( p, r, col, exp_name );
     if( test_mode ) {
         // avoid segfault from null tilecontext in tests
         return;
@@ -341,6 +343,7 @@ void explosion_handler::draw_explosion( const tripoint_bub_ms &p, const int r, c
 void explosion_handler::draw_explosion( const tripoint_bub_ms &p, const int r, const nc_color &col,
                                         const std::string & )
 {
+    cata_mp::share_explosion( p, r, col, "explosion" );
     draw_explosion_curses( *g, p, r, col );
 }
 #endif
@@ -349,6 +352,7 @@ void explosion_handler::draw_custom_explosion( const tripoint_bub_ms &,
         const std::map<tripoint_bub_ms, nc_color> &all_area,
         const std::string &exp_name )
 {
+    cata_mp::share_custom_explosion( all_area, exp_name );
 #if !defined(TILES)
     ( void )exp_name;
 #endif

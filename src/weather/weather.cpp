@@ -24,6 +24,8 @@
 #include "map/submap.h"
 #include "math_defines.h"
 #include "messages.h"
+#include "npc.h"
+#include "mp_session.h"
 #include "options.h"
 #include "point.h"
 #include "point_float.h"
@@ -367,9 +369,18 @@ static void fill_water_collectors(int mmPerHour, bool acid) {
  * @see player::drench
  */
 void weather_effect::wet_player(int amount) {
+    wet_character(get_avatar(), amount);
+    // Co-op: the other players' characters stand in the same rain.
+    for (npc& guy : g->all_npcs()) {
+        if (cata_mp::is_proxy(guy)) { wet_character(guy, amount); }
+    }
+}
+
+void weather_effect::wet_character(Character& target, int amount) {
     ZoneScopedN("wet_player");
-    Character& target = get_avatar();
-    if (!is_player_outside() || target.has_trait(trait_FEATHERS)
+    const bool outside = target.is_avatar() ? is_player_outside()
+                                             : get_map().is_outside(target.bub_pos());
+    if (!outside || target.has_trait(trait_FEATHERS)
         || target.primary_weapon().has_flag(json_flag_RAIN_PROTECT)
         || (!one_in(50) && target.worn_with_flag(json_flag_RAINPROOF))) {
         return;
@@ -402,7 +413,7 @@ void weather_effect::wet_player(int amount) {
         drenched_parts.unify_set({{bodypart_str_id("leg_l"), bodypart_str_id("leg_r")}});
     }
 
-    g->u.drench(amount, drenched_parts, false);
+    target.drench(amount, drenched_parts, false);
 }
 
 /**

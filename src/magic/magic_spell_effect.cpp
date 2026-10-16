@@ -1,5 +1,6 @@
 #include "../overmap/overmapbuffer.h"
 #include "animation.h"
+#include "mp_session.h"
 #include "avatar.h"
 #include "avatar_action.h"
 #include "bodypart.h"
@@ -1044,13 +1045,13 @@ void spell_effect::mod_moves(const spell& sp, Creature& caster, const tripoint_b
 }
 
 void spell_effect::map_area(const spell& sp, Creature& caster, const tripoint_bub_ms&) {
-    const avatar* you = caster.as_avatar();
-    if (!you) {
-        // revealing the map only makes sense for the avatar
-        return;
-    }
+    const Character* you = caster.as_character();
+    // Revealing the map only makes sense for a player: the avatar or, in
+    // co-op, a remote player's character.
+    if (!you || !(you->is_avatar() || cata_mp::is_proxy(*you))) { return; }
     const tripoint_abs_omt center = you->abs_omt_pos();
     get_overmapbuffer(you->get_dimension()).reveal(center.xy(), sp.aoe(), center.z());
+    if (!you->is_avatar()) { cata_mp::share_revealed_overmap(*you, center, sp.aoe()); }
 }
 
 void spell_effect::morale(const spell& sp, Creature& caster, const tripoint_bub_ms& target) {

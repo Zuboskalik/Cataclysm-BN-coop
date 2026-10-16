@@ -984,14 +984,15 @@ monster_plan_t monster::compute_plan( const monster::compute_plan_context &ctx )
     }
 
     if( has_effect( effect_led_by_leash ) && local_friendly != 0 ) {
-        if( target != nullptr && rl_dist( g->u.bub_pos(), target->bub_pos() ) < 2 &&
-            target->attitude_to( g->u ) == Attitude::A_HOSTILE && !fleeing ) {
-            if( rl_dist( bub_pos(), g->u.bub_pos() ) > 5 ) {
-                local_goal = g->u.bub_pos();
+        const Character &holder = leash_holder();
+        if( target != nullptr && rl_dist( holder.bub_pos(), target->bub_pos() ) < 2 &&
+            target->attitude_to( holder ) == Attitude::A_HOSTILE && !fleeing ) {
+            if( rl_dist( bub_pos(), holder.bub_pos() ) > 5 ) {
+                local_goal = holder.bub_pos();
                 local_goal_kind = monster_plan_goal_kind::none;
             }
-        } else if( rl_dist( bub_pos(), g->u.bub_pos() ) > 1 ) {
-            local_goal = g->u.bub_pos();
+        } else if( rl_dist( bub_pos(), holder.bub_pos() ) > 1 ) {
+            local_goal = holder.bub_pos();
             local_goal_kind = monster_plan_goal_kind::none;
         } else {
             local_goal = bub_pos(); // unset_dest
@@ -1848,11 +1849,26 @@ void monster::execute_action( const monster_action_t &action )
 
     // Leash check.
     if( has_effect( effect_led_by_leash ) ) {
-        if( rl_dist( bub_pos(), g->u.bub_pos() ) > 8 ) {
+        const Character &holder = leash_holder();
+        if( rl_dist( bub_pos(), holder.bub_pos() ) > 8 ) {
             remove_effect( effect_led_by_leash );
-            add_msg( m_info, _( "You lose hold of a leash." ) );
+            remove_value( "coop_leash_holder" );
+            holder.add_msg_if_player( m_info, _( "You lose hold of a leash." ) );
         }
     }
+}
+
+const Character &monster::leash_holder() const
+{
+    // Co-op: a remote player's character may hold the leash.
+    if( const auto id = get_value_as_int( "coop_leash_holder" ) ) {
+        if( const npc *holder = g->find_npc( character_id( *id ) ) ) {
+            if( !holder->is_dead() && get_map().inbounds( holder->bub_pos() ) ) {
+                return *holder;
+            }
+        }
+    }
+    return g->u;
 }
 
 // move() wrapper: thin shim over decide_action / execute_action.
@@ -2186,9 +2202,10 @@ int monster::calc_movecost( const tripoint_bub_ms &f, const tripoint_bub_ms &t )
     }
 
     // If we're leading a pet around by a leash, make it a bit easier for them to catch up if they fall behind too much.
-    if( has_effect( effect_led_by_leash ) && rl_dist( f, g->u.bub_pos() ) > 4 ) {
+    if( has_effect( effect_led_by_leash ) && rl_dist( f, leash_holder().bub_pos() ) > 4 ) {
         // Only give a bonus if the destination gets them closer to the player
-        if( rl_dist( f, g->u.bub_pos() ) > rl_dist( t, g->u.bub_pos() ) ) {
+        const tripoint_bub_ms holder_pos = leash_holder().bub_pos();
+        if( rl_dist( f, holder_pos ) > rl_dist( t, holder_pos ) ) {
             movecost /= 2;
         }
     }

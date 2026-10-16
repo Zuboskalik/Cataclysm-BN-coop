@@ -457,8 +457,11 @@ void map::cull_heard_sounds()
     const int soundlistnum = m_sound_cache.sound_list_filtered.size();
     m_sound_cache.sound_list_filtered.clear();
     //Now we can safely cull sounds.
-    std::erase_if( m_sound_cache.sound_instances, []( const auto & sound ) {
-        return sound.heard_by_monsters && sound.heard_by_player && sound.heard_by_npcs;
+    // Co-op: also wait for the other players' characters to hear it.
+    const bool coop = cata_mp::is_host();
+    std::erase_if( m_sound_cache.sound_instances, [coop]( const auto & sound ) {
+        return sound.heard_by_monsters && sound.heard_by_player && sound.heard_by_npcs &&
+               ( !coop || sound.heard_by_coop );
     } );
     const int soundnumafter = m_sound_cache.sound_instances.size();
     m_sound_cache.sounds_culled_this_turn += ( std::max( 0, soundnumbefore - soundnumafter ) );
@@ -2434,6 +2437,47 @@ static void describe_sound_to_proxy( const npc &who, const sound_event &sound )
     }
 }
 
+void sounds::process_sounds_coop()
+{
+    auto &map = get_map();
+    auto &sound_vector = map.m_sound_cache.sound_instances;
+    std::vector<npc *> listeners;
+    for( npc &guy : g->all_npcs() ) {
+        if( cata_mp::is_proxy( guy ) && map.inbounds( guy.bub_pos() ) ) {
+            listeners.push_back( &guy );
+        }
+    }
+    for( npc *who : listeners ) {
+        if( who->is_deaf() ) {
+            continue;
+        }
+        const tripoint_bub_ms loc = who->bub_pos();
+        const auto &level_cache = map.get_cache_ref( loc.z() );
+        const bool indoors = !level_cache.outside_cache[level_cache.idx( loc.x(), loc.y() )];
+        const short t_absorp = level_cache.absorption_cache[level_cache.idx( loc.x(), loc.y() )];
+        // Like the player's: ambient noise, minus how far below it one hears.
+        const short ambient = loc.z() < 0 ? AMBIENT_VOLUME_UNDERGROUND : AMBIENT_VOLUME_ABOVEGROUND;
+        const short below_ambient = std::min( 19100, static_cast<int>( std::floor( 1500 + 500 *
+                                              who->hearing_ability() ) ) );
+        const short passive = dBspl_to_mdBspl( who->get_char_hearing_protection() );
+        const short threshold = std::max( 0, ambient + passive - below_ambient );
+        for( auto &element : sound_vector ) {
+            if( element.heard_by_coop ) {
+                continue;
+            }
+            const short avg_absorp = ( t_absorp == 0 && element.terrain_sound_absorbtion_at_source == 0 ) ?
+                                     0 : static_cast<short>( std::round( ( t_absorp + element.terrain_sound_absorbtion_at_source ) * 0.5 ) );
+            const short tile_vol = svol_at( element, loc, avg_absorp, indoors, who->sees( element.origin ) );
+            if( tile_vol > threshold ) {
+                describe_sound_to_proxy( *who, element.sound );
+            }
+        }
+    }
+    for( auto &element : sound_vector ) {
+        element.heard_by_coop = true;
+    }
+}
+
 void sounds::process_sounds_npc()
 {
     ZoneScoped;
@@ -2550,9 +2594,6 @@ void sounds::process_sounds_npc()
                           element.from_npc ) ) {
 
                         who.handle_sound( ( tile_vol - passive_sound_dampening ), element.sound );
-                    }
-                    if( cata_mp::is_proxy( who ) ) {
-                        describe_sound_to_proxy( who, element.sound );
                     }
                 }
                 // Deafening is based on the felt volume, as an NPC may be too deaf to

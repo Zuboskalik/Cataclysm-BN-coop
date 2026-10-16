@@ -32,6 +32,7 @@
 #include "mission.h"
 #include "mongroup.h"
 #include "note_label_utils.h"
+#include "mp_session.h"
 #include "npc.h"
 #include "omdata.h"
 #include "options.h"
@@ -969,6 +970,13 @@ static void draw_ascii(
             }
         }
         for (auto& elem : player_character.omt_path) { player_path_route[elem.xy()] = elem.z(); }
+        // Co-op: the other players' characters (on a client, the characters
+        // the host sends are not in this buffer).
+        if (cata_mp::active()) {
+            for (npc& guy : g->all_npcs()) {
+                if (cata_mp::is_client() || cata_mp::is_proxy(guy)) { followers.push_back(&guy); }
+            }
+        }
         for (const auto& np : followers) {
             if (np->bub_pos().z() != center.z()) { continue; }
             const tripoint_abs_omt pos = np->abs_omt_pos();

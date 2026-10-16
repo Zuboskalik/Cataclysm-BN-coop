@@ -11,6 +11,8 @@
 
 #include <optional>
 #include <string>
+
+class Character;
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -84,6 +86,7 @@ void morale(
     const std::string& morale_id_str, const std::string& morale_msg, int morale_msg_frequency,
     game_message_type message_type);
 void wet_player(int amount);
+void wet_character(Character& target, int amount);
 } // namespace weather_effect
 
 struct weather_sum {

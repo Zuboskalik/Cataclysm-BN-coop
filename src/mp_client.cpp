@@ -17,6 +17,7 @@
 
 #include "activity_actor_definitions.h"
 #include "armor_layers.h"
+#include "animation.h"
 #include "avatar.h"
 #include "bionics.h"
 #include "calendar.h"
@@ -554,7 +555,41 @@ void apply_state( message &m )
         }
     }
 
+    // ---- vehicles' fuel use, for the "time until empty" displays
+    if( jo.has_array( "fuel" ) ) {
+        std::set<vehicle *> reset;
+        for( JsonArray e : jo.get_array( "fuel" ) ) {
+            const tripoint_bub_ms pos = abs_to_bub( tripoint_abs_ms( e.get_int( 0 ), e.get_int( 1 ),
+                                                    e.get_int( 2 ) ) );
+            if( !here.inbounds( pos ) ) {
+                continue;
+            }
+            const optional_vpart_position vp = here.veh_at( pos );
+            if( !vp ) {
+                continue;
+            }
+            vehicle &veh = vp->vehicle();
+            if( reset.insert( &veh ).second ) {
+                veh.fuel_used_last_turn.clear();
+            }
+            veh.fuel_used_last_turn[itype_id( e.get_string( 3 ) )] = static_cast<float>( e.get_float( 4 ) );
+        }
+    }
+
     // ---- monsters
+    // Updated monsters arrive as new copies.  An aim spanning turns tracks
+    // its target through last_target, so it moves on to the new copy of the
+    // same monster (a killed one is gone: the target is lost, as in single
+    // player).
+    std::string aimed_key;
+    if( const shared_ptr_fast<Creature> aimed = u.last_target.lock() ) {
+        for( const auto &[key, mon] : S.monsters ) {
+            if( mon.get() == aimed.get() ) {
+                aimed_key = key;
+                break;
+            }
+        }
+    }
     if( jo.has_bool( "mon_reset" ) && jo.get_bool( "mon_reset" ) ) {
         remove_all_monsters();
     }
@@ -615,6 +650,14 @@ void apply_state( message &m )
             if( g->place_critter_around( mon, pos, 0, true ) != nullptr ) {
                 S.monsters[key] = mon;
             }
+        }
+    }
+    if( !aimed_key.empty() ) {
+        const auto aimed = S.monsters.find( aimed_key );
+        if( aimed != S.monsters.end() && aimed->second ) {
+            u.last_target = aimed->second;
+        } else {
+            u.last_target.reset();
         }
     }
     rebuild_monster_seeds();
@@ -686,6 +729,9 @@ void apply_state( message &m )
     here.build_map_cache( u.abs_pos().z() );
     // Items of our character or on the map may have been replaced.
     u.invalidate_crafting_inventory();
+    // The compass and safe mode are updated in the player's turn, which the
+    // client does not run.
+    g->mon_info_update();
     S.got_state = true;
     g->invalidate_main_ui_adaptor();
 }
@@ -860,6 +906,10 @@ void request_craft( const bool is_long, const bool again )
                                          json_quote( id.str() ), std::max( 1, batch ), is_long ? "true" : "false" ) );
 }
 
+// An aim in progress across turns, and how steady it already is.
+std::unique_ptr<aim_activity_actor> pending_aim;
+double pending_recoil = MAX_RECOIL;
+
 // Aiming and firing the wielded gun.  The usual targeting UI runs here on
 // our copy of the character, with time to spare so a whole aim fits in one
 // go; the host then fires with the aim we reached and takes the time spent.
@@ -898,26 +948,33 @@ void request_fire()
                  u.primary_weapon().tname() );
         return;
     }
-    constexpr int budget = 100000;
-    std::unique_ptr<aim_activity_actor> aim = aim_activity_actor::use_wielded();
-    target_handler::trajectory trajectory;
-    int spent = 0;
-    // An empty result without abort means "aimed as well as possible and
-    // waited": keep going, as the next turn would.
-    for( int round = 0; round < 8 && trajectory.empty() && !aim->aborted; ++round ) {
-        u.set_moves( budget );
-        trajectory = target_handler::mode_fire( u, *aim );
-        spent += budget - std::max( 0, u.get_moves() );
+    // Aiming takes the character's turns, like in single player: one turn's
+    // worth of moves here, and if the aim needs more, the turn ends (monsters
+    // act) and the targeting screen comes back on our next turn.
+    constexpr int turn_moves = 100;
+    if( !pending_aim ) {
+        pending_aim = aim_activity_actor::use_wielded();
+    } else {
+        u.recoil = pending_recoil;
     }
-    if( aim->aborted ) {
-        if( aim->reload_requested ) {
+    aim_activity_actor &aim = *pending_aim;
+    u.set_moves( turn_moves );
+    const target_handler::trajectory trajectory = target_handler::mode_fire( u, aim );
+    const int spent = turn_moves - std::max( 0, u.get_moves() );
+    if( aim.aborted ) {
+        pending_aim.reset();
+        if( aim.reload_requested ) {
             send_action( "reload" );
         }
         return;
     }
     if( trajectory.empty() ) {
+        // Out of moves while aiming: keep the aim and go on next turn.
+        pending_recoil = u.recoil;
+        send_action( "aim", string_format( ",\"recoil\":%.3f", u.recoil ) );
         return;
     }
+    pending_aim.reset();
     const tripoint_bub_ms target = trajectory.back();
     if( target == u.bub_pos() ) {
         return;
@@ -1591,6 +1648,38 @@ std::string answer_trade( const JsonObject &jo )
            ",\"yours\":" + trade_picks( state.yours, false );
 }
 
+// An animation the host drew (an explosion, a spell's area), shown here too.
+void play_animation( message &m )
+{
+    if( !S.in_game || !S.got_state ) {
+        return;
+    }
+    JsonObject jo = m.object();
+    const std::string kind = jo.get_string( "k", "" );
+    const std::string name = jo.get_string( "n", "explosion" );
+    map &here = get_map();
+    if( kind == "exp" ) {
+        const tripoint_bub_ms p = abs_to_bub( tripoint_abs_ms( jo.get_int( "x", 0 ), jo.get_int( "y", 0 ),
+                                              jo.get_int( "z", 0 ) ) );
+        if( here.inbounds( p ) ) {
+            explosion_handler::draw_explosion( p, jo.get_int( "r", 0 ),
+                                               color_from_string( jo.get_string( "c", "" ), report_color_error::no ), name );
+        }
+    } else if( kind == "cexp" ) {
+        std::map<tripoint_bub_ms, nc_color> area;
+        for( JsonArray e : jo.get_array( "pts" ) ) {
+            const tripoint_bub_ms p = abs_to_bub( tripoint_abs_ms( e.get_int( 0 ), e.get_int( 1 ),
+                                                  e.get_int( 2 ) ) );
+            if( here.inbounds( p ) ) {
+                area[p] = color_from_string( e.get_string( 3 ), report_color_error::no );
+            }
+        }
+        if( !area.empty() ) {
+            explosion_handler::draw_custom_explosion( get_avatar().bub_pos(), area, name );
+        }
+    }
+}
+
 void answer_question( message &m )
 {
     JsonObject jo = m.object();
@@ -1845,6 +1934,20 @@ void handle_line( const std::string &line )
         add_msg( m_info, "<color_light_cyan>%s</color>", jo.get_string( "text", "" ) );
     } else if( t == "ask" ) {
         answer_question( m );
+    } else if( t == "anim" ) {
+        play_animation( m );
+    } else if( t == "reveal" ) {
+        // A spell or the like taught our character the map around them.
+        JsonObject jo = m.object();
+        overmapbuffer &omb = get_overmapbuffer( get_avatar().get_dimension() );
+        for( JsonArray e : jo.get_array( "tiles" ) ) {
+            const tripoint_abs_omt op( e.get_int( 0 ), e.get_int( 1 ), e.get_int( 2 ) );
+            const oter_str_id id( e.get_string( 3 ) );
+            if( id.is_valid() ) {
+                omb.ter_set( op, id.id() );
+                omb.set_seen( op, true );
+            }
+        }
     } else if( t == "bye" ) {
         JsonObject jo = m.object();
         S.end_reason = jo.get_string( "msg", _( "The host ended the session." ) );
@@ -1968,6 +2071,7 @@ void leave_session( bool ask )
     net::client_disconnect();
     net::clear_events();
     waiting_notice.reset();
+    pending_aim.reset();
     S = state_t();
     world_generator->set_active_world( nullptr );
     if( scratch_world_exists() ) {
@@ -2203,6 +2307,15 @@ bool client_do_turn()
     }
     avatar &u = get_avatar();
     client::update_waiting_notice();
+    // An aim spanning several turns continues as soon as it is our turn.
+    if( client::pending_aim && S.my_turn && !S.awaiting_ack && !S.busy ) {
+        if( u.is_armed() && u.primary_weapon().is_gun() ) {
+            client::request_fire();
+        } else {
+            client::pending_aim.reset();
+        }
+        return false;
+    }
     // handle_action() expects a character that can act; the host owns the
     // real move budget.  Activities run on the host only: drop any a local
     // menu left behind.
@@ -2341,7 +2454,8 @@ bool client_intercept_action( action_id act,
             return true;
         }
         case ACTION_SMASH: {
-            const std::optional<tripoint_bub_ms> p = choose_adjacent( _( "Smash where?" ), true );
+            const std::optional<tripoint_bub_ms> p = choose_adjacent_highlight( _( "Smash where?" ),
+                    _( "There is nothing to smash nearby." ), ACTION_SMASH, true );
             if( p ) {
                 bool acid = false;
                 for( const item *it : get_map().i_at( *p ) ) {
@@ -2360,12 +2474,18 @@ bool client_intercept_action( action_id act,
         case ACTION_EXAMINE: {
             std::optional<tripoint_bub_ms> p = mouse_target;
             if( !p ) {
-                p = choose_adjacent( _( "Examine where?" ), true );
+                p = choose_adjacent_highlight( _( "Examine where?" ),
+                                               _( "There is nothing that can be examined nearby." ), ACTION_EXAMINE, true );
             }
             if( !p ) {
                 return true;
             }
             map &here = get_map();
+            // A monster: the host shows its menu (pets, mechs, robots).
+            if( g->critter_at<monster>( *p ) != nullptr ) {
+                client::send_action( "examine", client::pos_fields( *p ) );
+                return true;
+            }
             // Another character there: the host or an NPC.  Same options
             // as the host has for us: swap, examine wounds, attack.
             if( const npc *who = g->critter_at<npc>( *p ) ) {
@@ -2407,7 +2527,8 @@ bool client_intercept_action( action_id act,
         case ACTION_PICKUP_ALL: {
             std::optional<tripoint_bub_ms> p = mouse_target;
             if( !p ) {
-                p = choose_adjacent( _( "Pick up items where?" ) );
+                p = choose_adjacent_highlight( _( "Pick up items where?" ),
+                                               _( "There is nothing to pick up nearby." ), ACTION_PICKUP, false );
             }
             if( p ) {
                 client::request_pickup( *p );

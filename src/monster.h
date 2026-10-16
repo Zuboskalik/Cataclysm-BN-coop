@@ -577,6 +577,9 @@ class monster : public Creature, public location_visitable<monster>
 
         // check if this monster is a pet of the player
         bool is_pet() const;
+        // Who leads this monster by its leash: the avatar, or in co-op a
+        // remote player's character.
+        const Character &leash_holder() const;
 
         character_id bonded_character_id; // id of bonded character ( for save/load )
         void on_pet_bonding( Character *ch );

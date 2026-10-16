@@ -74,6 +74,9 @@ void process_sounds();
 void process_sounds_npc();
 // process_sound_markers applies sound events to the player and records them for display.
 void process_sound_markers( Character *who );
+// Co-op: tells the other players' characters what they hear, like the player
+// is told; call right after process_sound_markers( &u ).
+void process_sounds_coop();
 // Returns the sound direction index from source to listener.
 auto direction_index_to_sound_source( const tripoint_bub_ms &source,
                                       const tripoint_bub_ms &listener ) -> uint8_t;

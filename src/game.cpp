@@ -2186,6 +2186,7 @@ bool game::do_turn()
         m.cull_heard_sounds();
         // Process sound events into sound markers for display to the player.
         sounds::process_sound_markers( &u );
+        sounds::process_sounds_coop();
 
         if( u.is_deaf() ) {
             sfx::do_hearing_loss();

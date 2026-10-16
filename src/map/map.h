@@ -573,6 +573,8 @@ struct sound_instance_cache {
     bool heard_by_monsters = false;
     // Has a sound been heard by the NPCs?
     bool heard_by_npcs = false;
+    // Co-op: heard by the other players' characters (see sounds::process_sounds_coop).
+    bool heard_by_coop = false;
 
     // Is this noise from movement? For quick filtering, so monsters dont hear
     // their own footsteps and NPCs dont investiage a noise they should know is

@@ -50,6 +50,7 @@
 #include "map/mapbuffer.h"
 #include "map/mapdata.h"
 #include "map/submap.h"
+#include "monexamine.h"
 #include "messages.h"
 #include "mission.h"
 #include "map/field_type.h"
@@ -138,6 +139,8 @@ struct peer_t {
     bool dont_wait = false;
     // Turns in a row the character's activity did not use any moves.
     int stalled_activity_turns = 0;
+    // Hostiles already in sight when the player started waiting.
+    std::set<const monster *> wait_known_hostiles;
     // Something that would interrupt the character's activity; the player is
     // asked whether to stop before the character's next turn.
     std::optional<std::pair<distraction_type, std::string>> distraction;
@@ -661,6 +664,24 @@ std::string build_state( peer_t &p, sync_level level, broadcast_cache &cache )
         // Whether the character is busy with something (sent every time:
         // the client relies on it rather than on its own copy).
         out += string_format( ",\"busy\":%s", proxy->activity && *proxy->activity ? "true" : "false" );
+    }
+
+    // ---- vehicles' fuel use (the client does not run vehicles, but shows
+    // how long the fuel lasts from this)
+    {
+        std::string fuel;
+        for( const wrapped_vehicle &wv : get_map().get_vehicles() ) {
+            const vehicle &veh = *wv.v;
+            const tripoint_abs_ms at = veh.abs_ms_location();
+            for( const auto &[id, used] : veh.fuel_used_last_turn ) {
+                fuel += fuel.empty() ? "" : ",";
+                fuel += string_format( "[%d,%d,%d,%s,%.4f]", at.x(), at.y(), at.z(),
+                                       json_quote( id.str() ), used );
+            }
+        }
+        if( !fuel.empty() ) {
+            out += ",\"fuel\":[" + fuel + "]";
+        }
     }
 
     // ---- monsters
@@ -1660,10 +1681,18 @@ action_result do_item_action( npc &guy, const std::string &what, const JsonObjec
     return fail( _( "That action is not available in co-op yet." ) );
 }
 
-bool hostile_in_view( npc &guy, std::string &what )
+// Hostiles the character sees within safe mode distance (like the
+// player's safe mode).  `known` are the ones already there when waiting
+// began: like in single player, only new ones interrupt.
+bool hostile_in_view( npc &guy, std::string &what, const std::set<const monster *> *known = nullptr )
 {
+    const int proximity = get_option<int>( "SAFEMODEPROXIMITY" );
+    const int range = proximity > 0 ? proximity : 60;
     for( monster &critter : g->all_monsters() ) {
-        if( critter.is_dead() || rl_dist( critter.bub_pos(), guy.bub_pos() ) > 20 ) {
+        if( critter.is_dead() || rl_dist( critter.bub_pos(), guy.bub_pos() ) > range ) {
+            continue;
+        }
+        if( known != nullptr && known->contains( &critter ) ) {
             continue;
         }
         if( critter.attitude_to( guy ) == Attitude::A_HOSTILE && guy.sees( critter ) ) {
@@ -1672,6 +1701,17 @@ bool hostile_in_view( npc &guy, std::string &what )
         }
     }
     return false;
+}
+
+std::set<const monster *> visible_hostiles( npc &guy )
+{
+    std::set<const monster *> seen;
+    for( monster &critter : g->all_monsters() ) {
+        if( !critter.is_dead() && critter.attitude_to( guy ) == Attitude::A_HOSTILE && guy.sees( critter ) ) {
+            seen.insert( &critter );
+        }
+    }
+    return seen;
 }
 
 item *wielded_gun( npc &guy )
@@ -1790,6 +1830,22 @@ action_result do_examine( npc &guy, const tripoint_bub_ms &pos )
     map &here = get_map();
     if( rl_dist( guy.bub_pos(), pos ) > 1 || !here.inbounds( pos ) ) {
         return fail( _( "That is too far away." ) );
+    }
+    if( monster *mon = g->critter_at<monster>( pos ) ) {
+        // Like game::examine: the pet's menu, for this player.
+        guy.add_msg_if_player( _( "There is a %s." ), mon->get_name() );
+        if( mon->has_effect( efftype_id( "pet" ) ) && !guy.is_mounted() ) {
+            monexamine::pet_menu( *mon );
+        } else if( ( mon->has_flag( MF_RIDEABLE_MECH ) || mon->has_flag( MF_CARD_OVERRIDE ) ) &&
+                   !mon->has_effect( efftype_id( "pet" ) ) &&
+                   mon->attitude_to( guy ) != Attitude::A_HOSTILE ) {
+            monexamine::mech_hack( *mon );
+        } else if( mon->has_flag( MF_PAY_BOT ) ) {
+            monexamine::pay_bot( *mon );
+        } else if( mon->attitude_to( guy ) == Attitude::A_FRIENDLY && !guy.is_mounted() ) {
+            monexamine::mfriend_menu( *mon );
+        }
+        return action_result{};
     }
     if( const optional_vpart_position vp = here.veh_at( pos ) ) {
         // The vehicle's menu, for this player; its questions go to them.
@@ -2421,6 +2477,7 @@ action_result execute( peer_t &p, npc &guy, message &m )
     }
     if( a == "wait" ) {
         p.auto_wait_turns = std::clamp( jo.get_int( "turns", 1 ), 1, 24 * 60 * 60 );
+        p.wait_known_hostiles = visible_hostiles( guy );
         guy.add_msg_if_player( m_info, _( "You start waiting." ) );
         return action_result{};
     }
@@ -2504,6 +2561,15 @@ action_result execute( peer_t &p, npc &guy, message &m )
         } else {
             guy.add_msg_if_player( m_warning, _( "%s has nowhere to go!" ), other->get_name() );
         }
+        return action_result{};
+    }
+    if( a == "aim" ) {
+        // Aiming with the wielded gun used up this turn.
+        if( wielded_gun( guy ) == nullptr ) {
+            return fail( _( "You are not wielding a gun." ) );
+        }
+        guy.recoil = std::clamp( jo.get_float( "recoil", MAX_RECOIL ), 0.0, static_cast<double>( MAX_RECOIL ) );
+        guy.set_moves( 0 );
         return action_result{};
     }
     if( a == "turret_fire" ) {
@@ -2657,7 +2723,8 @@ bool wait_for_action( int peer_id )
     input_context ctxt( "DEFAULTMODE" );
     ctxt.register_action( action_ident( ACTION_COOP_PLAYERS ) );
     for( const action_id act : {
-             ACTION_INVENTORY, ACTION_LOOK, ACTION_MAP, ACTION_MESSAGES, ACTION_PL_INFO, ACTION_COOP_CHAT
+             ACTION_INVENTORY, ACTION_LOOK, ACTION_MAP, ACTION_MESSAGES, ACTION_PL_INFO, ACTION_COOP_CHAT,
+             ACTION_PAUSE
          } ) {
         ctxt.register_action( action_ident( act ) );
     }
@@ -2689,6 +2756,15 @@ bool wait_for_action( int peer_id )
         refresh_display();
         ctxt.set_timeout( 40 );
         const std::string action = ctxt.handle_input();
+        // The host's own waiting or long action stops on the pause key, as in
+        // single player (the other player's turns keep it running otherwise).
+        if( action == action_ident( ACTION_PAUSE ) ) {
+            avatar &host_char = get_avatar();
+            if( host_char.activity && *host_char.activity ) {
+                host_char.cancel_activity();
+                add_msg( m_info, _( "You stop what you are doing." ) );
+            }
+        }
         if( action == action_ident( ACTION_INVENTORY ) ) {
             game_menus::inv::common( get_avatar() );
         } else if( action == action_ident( ACTION_LOOK ) ) {
@@ -3100,7 +3176,7 @@ bool host_proxy_turn( npc &guy )
         }
         if( p->auto_wait_turns > 0 ) {
             std::string what;
-            if( host::hostile_in_view( guy, what ) ) {
+            if( host::hostile_in_view( guy, what, &p->wait_known_hostiles ) ) {
                 p->auto_wait_turns = 0;
                 guy.add_msg_if_player( m_warning, _( "You stop waiting: you see a %s!" ), what );
                 continue;
@@ -3324,6 +3400,73 @@ void share_shout( const Character &who, const std::string &text )
         }
         host::send_to_player( p, m_info, remove_color_tags( text ) );
     }
+}
+
+namespace
+{
+// Sends `msg` to every remote player in game.
+void send_to_all_players( const std::string &msg )
+{
+    for( auto &[id, p] : host::peers ) {
+        if( p.joined && host::proxy_of( p ) != nullptr ) {
+            host::send( p.id, msg );
+        }
+    }
+}
+} // namespace
+
+void share_explosion( const tripoint_bub_ms &p, int radius, const nc_color &col,
+                      const std::string &name )
+{
+    if( !is_host() || connected_players() == 0 ) {
+        return;
+    }
+    const tripoint_abs_ms a = bub_to_abs( p );
+    send_to_all_players( string_format(
+                             "{\"t\":\"anim\",\"k\":\"exp\",\"x\":%d,\"y\":%d,\"z\":%d,\"r\":%d,\"c\":%s,\"n\":%s}",
+                             a.x(), a.y(), a.z(), radius, json_quote( string_from_color( col ) ), json_quote( name ) ) );
+}
+
+void share_custom_explosion( const std::map<tripoint_bub_ms, nc_color> &area,
+                             const std::string &name )
+{
+    if( !is_host() || connected_players() == 0 || area.empty() ) {
+        return;
+    }
+    std::string pts;
+    for( const auto &[p, col] : area ) {
+        const tripoint_abs_ms a = bub_to_abs( p );
+        pts += pts.empty() ? "" : ",";
+        pts += string_format( "[%d,%d,%d,%s]", a.x(), a.y(), a.z(),
+                              json_quote( string_from_color( col ) ) );
+    }
+    send_to_all_players( "{\"t\":\"anim\",\"k\":\"cexp\",\"n\":" + json_quote( name ) +
+                         ",\"pts\":[" + pts + "]}" );
+}
+
+void share_revealed_overmap( const Character &who, const tripoint_abs_omt &center, int radius )
+{
+    if( !is_host() ) {
+        return;
+    }
+    host::peer_t *p = host::peer_of_proxy( who.getID() );
+    if( p == nullptr || !p->joined ) {
+        return;
+    }
+    overmapbuffer &omb = get_overmapbuffer( who.get_dimension() );
+    std::string tiles;
+    for( int dx = -radius; dx <= radius; ++dx ) {
+        for( int dy = -radius; dy <= radius; ++dy ) {
+            const tripoint_abs_omt op( center.x() + dx, center.y() + dy, center.z() );
+            if( !omb.seen( op ) ) {
+                continue;
+            }
+            tiles += tiles.empty() ? "" : ",";
+            tiles += string_format( "[%d,%d,%d,%s]", op.x(), op.y(), op.z(),
+                                    json_quote( omb.ter( op ).id().str() ) );
+        }
+    }
+    host::send( p->id, "{\"t\":\"reveal\",\"tiles\":[" + tiles + "]}" );
 }
 
 bool remote_prompts_active()

@@ -14,6 +14,7 @@
 
 #include <optional>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,6 +28,7 @@ class item;
 class JsonIn;
 class main_menu;
 class monster;
+class nc_color;
 class npc;
 class player;
 class vehicle;
@@ -185,6 +187,16 @@ void share_message( int /* game_message_type */ type, const std::string &text );
 // Host: `who` shouts; the remote players near enough to hear it (other than
 // `who` itself) get `text` in their message log.
 void share_shout( const Character &who, const std::string &text );
+
+// Host: explosion animations (spells, explosives) are drawn on the remote
+// players' screens as well.
+void share_explosion( const tripoint_bub_ms &p, int radius, const nc_color &col,
+                      const std::string &name );
+void share_custom_explosion( const std::map<tripoint_bub_ms, nc_color> &area,
+                             const std::string &name );
+// Host: `who` (a remote player's character) learned the overmap within
+// `radius` of `center`; their client is told.
+void share_revealed_overmap( const Character &who, const tripoint_abs_omt &center, int radius );
 
 // ---- conversations ----------------------------------------------------------
 // The NPC said `challenge`; the remote player picks one of `responses` in a

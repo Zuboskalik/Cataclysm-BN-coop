@@ -7317,7 +7317,12 @@ auto map::get_dir_circle(const tripoint_bub_ms& f, const tripoint_bub_ms& t) con
 
 void map::mp_apply_submaps(JsonIn& jsin) {
     // Drop cache references to vehicles of submaps that are about to be freed.
-    const auto forget_vehicles = [this](const tripoint_abs_sm&, submap& old) {
+    // Levels where a vehicle was or now is: its parts may reach into
+    // neighbouring submaps, so their caches are rebuilt whole (a vehicle that
+    // moved would otherwise leave floor and opacity behind it).
+    std::set<int> vehicle_levels;
+    const auto forget_vehicles = [this, &vehicle_levels](const tripoint_abs_sm& p, submap& old) {
+        if (!old.vehicles.empty()) { vehicle_levels.insert(p.z()); }
         for (const auto& veh : old.vehicles) {
             if (!veh) { continue; }
             for (int z = -OVERMAP_DEPTH; z <= OVERMAP_HEIGHT; ++z) {
@@ -7334,8 +7339,17 @@ void map::mp_apply_submaps(JsonIn& jsin) {
         if (!inbounds(p)) { continue; }
         loadn(abs_to_map_local(*this, p), true);
         touched = true;
+        const submap* sm = get_mapbuffer().lookup_submap_in_memory(p);
+        if (sm != nullptr && !sm->vehicles.empty()) { vehicle_levels.insert(p.z()); }
     }
     if (!touched) { return; }
+    for (const int z : vehicle_levels) {
+        set_transparency_cache_dirty(z);
+        set_floor_cache_dirty(z);
+        set_outside_cache_dirty(z);
+        set_seen_cache_dirty(z);
+        set_vehicle_cache_dirty(z);
+    }
     refresh_active_submap_view();
     reset_vehicle_cache();
 }

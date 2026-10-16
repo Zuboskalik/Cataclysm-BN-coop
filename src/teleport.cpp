@@ -52,9 +52,8 @@ bool teleport::teleport( Creature &critter, int min_distance, int max_distance, 
     //handles teleporting into solids.
     if( here.impassable( new_pos ) ) {
         if( safe ) {
-            if( c_is_u ) {
-                add_msg( m_bad, _( "You cannot teleport safely." ) );
-            }
+            // Co-op: a remote player's character is told as well.
+            critter.add_msg_if_player( m_bad, _( "You cannot teleport safely." ) );
             return false;
         }
         critter.apply_damage( nullptr, bodypart_id( "torso" ), 9999 );
@@ -69,9 +68,8 @@ bool teleport::teleport( Creature &critter, int min_distance, int max_distance, 
     if( Creature *const poor_soul = g->critter_at<Creature>( new_pos ) ) {
         player *const poor_player = dynamic_cast<player *>( poor_soul );
         if( safe ) {
-            if( c_is_u ) {
-                add_msg( m_bad, _( "You cannot teleport safely." ) );
-            }
+            // Co-op: a remote player's character is told as well.
+            critter.add_msg_if_player( m_bad, _( "You cannot teleport safely." ) );
             return false;
         } else if( poor_player && ( poor_player->worn_with_flag( json_flag_DIMENSIONAL_ANCHOR ) ||
                                     poor_player->has_effect_with_flag( json_flag_DIMENSIONAL_ANCHOR ) ) ) {
