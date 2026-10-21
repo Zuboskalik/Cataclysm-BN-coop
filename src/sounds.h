@@ -66,6 +66,8 @@ void clear_floodfill_que( const bool &soundperf );
 auto shift_sound_positions( const point_rel_ms &offset ) -> void;
 /* Reset the sound markers in the player UI so sounds do not blot out everything else. Call this after processing player input, not at the end of every turn. */
 void reset_markers();
+// Co-op client: a sound the host says our character heard there.
+void add_marker( const tripoint_bub_ms &p );
 
 // Methods for processing sound events
 // process_sounds() applies the sounds since the last turn to monster AI

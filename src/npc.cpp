@@ -3101,7 +3101,10 @@ void npc::npc_update_body()
     if( elapsed <= 0_turns ) {
         return;
     }
-    if( elapsed >= 10_seconds || action_time_scale::once_every_this_tick( 10_seconds ) ) {
+    // Co-op: a remote player's character is updated every turn like the
+    // avatar (stamina spent walking must come back the same way).
+    if( elapsed >= 10_seconds || action_time_scale::once_every_this_tick( 10_seconds ) ||
+        cata_mp::is_proxy( *this ) ) {
         update_body( elapsed );
         last_updated = calendar::turn;
     }
@@ -3763,7 +3766,10 @@ void npc::set_attitude( npc_attitude new_attitude )
              name, npc_attitude_id( attitude ), npc_attitude_id( new_attitude ) );
     attitude_group new_group = get_attitude_group( new_attitude );
     attitude_group old_group = get_attitude_group( attitude );
-    if( new_group != old_group && !is_fake() && g->u.sees( *this ) ) {
+    // Co-op: a client's NPCs are copies of the host's (their attitude follows
+    // the host, it is no news), and players' characters don't get angry.
+    const bool coop_copy = cata_mp::is_client() || cata_mp::is_proxy( *this );
+    if( new_group != old_group && !is_fake() && !coop_copy && g->u.sees( *this ) ) {
         switch( new_group ) {
             case attitude_group::hostile:
                 add_msg_if_npc( m_bad, _( "<npcname> gets angry!" ) );

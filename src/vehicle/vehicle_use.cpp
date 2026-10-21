@@ -458,35 +458,37 @@ auto vehicle::select_engine() -> int {
 
 auto vehicle::interact_vehicle_locked() -> bool {
     if (is_locked) {
-        const inventory& crafting_inv = g->u.crafting_inventory();
-        add_msg(_("You don't find any keys in the %s."), name);
+        // Co-op: whoever tries the controls (a remote player's character too).
+        player& who = cata_mp::acting_player();
+        const inventory& crafting_inv = who.crafting_inventory();
+        who.add_msg_if_player(_("You don't find any keys in the %s."), name);
         if (crafting_inv.has_quality(quality_id("SCREW"))) {
             if (query_yn(_("You don't find any keys in the %s. Attempt to hotwire vehicle?"),
                          name)) {
                 ///\EFFECT_MECHANICS speeds up vehicle hotwiring
-                int mechanics_skill = g->u.get_skill_level(skill_mechanics);
+                int mechanics_skill = who.get_skill_level(skill_mechanics);
                 const int hotwire_time = 6000 / ((mechanics_skill > 0) ? mechanics_skill : 1);
                 const int moves = to_moves<int>(time_duration::from_turns(hotwire_time));
                 // assign long activity
-                g->u.assign_activity(ACT_HOTWIRE_CAR, moves, -1, INT_MIN, _("Hotwire"));
+                who.assign_activity(ACT_HOTWIRE_CAR, moves, -1, INT_MIN, _("Hotwire"));
                 // use part 0 as the reference point
                 auto q = coord_translate(parts[0].mount);
                 const auto abs_veh_pos = abs_ms_location();
                 //[0]
-                g->u.activity->values.push_back(abs_veh_pos.x() + q.x());
+                who.activity->values.push_back(abs_veh_pos.x() + q.x());
                 //[1]
-                g->u.activity->values.push_back(abs_veh_pos.y() + q.y());
+                who.activity->values.push_back(abs_veh_pos.y() + q.y());
                 //[2]
-                g->u.activity->values.push_back(g->u.get_skill_level(skill_mechanics));
+                who.activity->values.push_back(who.get_skill_level(skill_mechanics));
             } else {
                 if (has_security_working() && query_yn(_("Trigger the %s's Alarm?"), name)) {
                     is_alarm_on = true;
                 } else {
-                    add_msg(_("You leave the controls alone."));
+                    who.add_msg_if_player(_("You leave the controls alone."));
                 }
             }
         } else {
-            add_msg(_("You could use a screwdriver to hotwire it."));
+            who.add_msg_if_player(_("You could use a screwdriver to hotwire it."));
         }
     }
 
@@ -1223,7 +1225,8 @@ void vehicle::stop_engines() {
 }
 
 void vehicle::start_engines(const bool take_control, const bool autodrive, Character* driver) {
-    Character& who = driver != nullptr ? *driver : static_cast<Character&>(g->u);
+    // Co-op: by default whoever uses the controls (a remote player's character too).
+    Character& who = driver != nullptr ? *driver : static_cast<Character&>(cata_mp::acting_player());
     bool has_engine = std::any_of(engines.begin(), engines.end(), [&](int idx) {
         return parts[idx].enabled && !parts[idx].is_broken();
     });
@@ -1258,7 +1261,7 @@ void vehicle::start_engines(const bool take_control, const bool autodrive, Chara
     }
 
     if (!has_engine) {
-        add_msg(m_info, _("The %s doesn't have an engine!"), name);
+        who.add_msg_if_player(m_info, _("The %s doesn't have an engine!"), name);
         return;
     }
 

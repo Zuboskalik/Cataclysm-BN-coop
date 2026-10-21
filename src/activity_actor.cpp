@@ -1,4 +1,5 @@
 #include "activity_actor.h"
+#include "mp_session.h"
 
 #include "action_time_scale.h"
 #include "activity_actor_definitions.h"
@@ -730,7 +731,8 @@ inline void disassemble_activity_actor::calc_all_moves( player_activity &act, Ch
 
 void disassemble_activity_actor::start( player_activity &act, Character &who )
 {
-    if( !who.is_avatar() ) {
+    // Co-op: a remote player's character disassembles like the avatar.
+    if( !who.is_avatar() && !cata_mp::is_proxy( who ) ) {
         debugmsg( "ACT_DISASSEMBLE is not implemented for NPCs" );
         act.set_to_null();
     } else if( !try_start_single( act, who ) ) {

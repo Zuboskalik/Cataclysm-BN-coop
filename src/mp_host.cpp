@@ -15,6 +15,7 @@
 #include <sstream>
 
 #include "activity_actor_definitions.h"
+#include "vehicle/vehicle_grab.h"
 #include "avatar.h"
 #include "bionics.h"
 #include "calendar.h"
@@ -134,6 +135,12 @@ struct peer_t {
     std::optional<std::string> action;
     bool turn_announced = false;
     int auto_wait_turns = 0;
+    // The wait ends early on this: "weather" (it changes from wait_weather)
+    // or "stamina" (full again).
+    std::string wait_until;
+    // Sound markers for the next state update.
+    std::vector<tripoint_abs_ms> sound_marks;
+    weather_type_id wait_weather;
     // The host chose not to wait for this player: their character idles
     // until they send an action.
     bool dont_wait = false;
@@ -864,6 +871,17 @@ std::string build_state( peer_t &p, sync_level level, broadcast_cache &cache )
         }
     }
 
+    // ---- sounds heard where the source is out of sight
+    if( !p.sound_marks.empty() ) {
+        std::string marks;
+        for( const tripoint_abs_ms &m : p.sound_marks ) {
+            marks += marks.empty() ? "" : ",";
+            marks += string_format( "[%d,%d,%d]", m.x(), m.y(), m.z() );
+        }
+        out += ",\"smark\":[" + marks + "]";
+        p.sound_marks.clear();
+    }
+
     // ---- overmap terrain around the remote player
     {
         const tripoint_abs_omt omt = proxy->abs_omt_pos();
@@ -1110,6 +1128,100 @@ tripoint_bub_ms read_bub( const JsonObject &jo )
     return abs_to_bub( abs );
 }
 
+// Grabbing furniture or a vehicle to drag it (G), as game.cpp's grab().
+action_result do_grab( npc &guy, const JsonObject &jo )
+{
+    map &here = get_map();
+    if( guy.get_grab_type() != OBJECT_NONE || jo.get_bool( "release", false ) ) {
+        if( const auto target = vehicle_grab_target_at( here, guy.bub_pos() + guy.grab_point ) ) {
+            guy.add_msg_if_player( _( "You release the %s." ), target->vp.vehicle().name );
+        } else if( here.has_furn( guy.bub_pos() + guy.grab_point ) ) {
+            guy.add_msg_if_player( _( "You release the %s." ),
+                                   here.furnname( guy.bub_pos() + guy.grab_point ) );
+        }
+        guy.grab( OBJECT_NONE );
+        return action_result{};
+    }
+    if( guy.is_mounted() ) {
+        return fail( _( "You can't grab things while you're riding." ) );
+    }
+    const tripoint_bub_ms grabp = read_bub( jo );
+    if( !here.inbounds( grabp ) || rl_dist( guy.bub_pos(), grabp ) != 1 ) {
+        return fail( _( "There's nothing to grab there!" ) );
+    }
+    if( const auto target = vehicle_grab_target_at( here, grabp ) ) {
+        guy.grab( OBJECT_VEHICLE, target->pos - guy.bub_pos() );
+        guy.add_msg_if_player( _( "You grab the %s." ), target->vp.vehicle().name );
+    } else if( here.has_furn( grabp ) ) {
+        if( !here.furn( grabp ).obj().is_movable() ) {
+            return fail( string_format( _( "You can not grab the %s" ), here.furnname( grabp ) ) );
+        }
+        guy.grab( OBJECT_FURNITURE, grabp - guy.bub_pos() );
+        if( !here.can_move_furniture( grabp, &guy ) ) {
+            guy.add_msg_if_player( _( "You grab the %s. It feels really heavy." ), here.furnname( grabp ) );
+        } else {
+            guy.add_msg_if_player( _( "You grab the %s." ), here.furnname( grabp ) );
+        }
+    } else {
+        return fail( _( "There's nothing to grab there!" ) );
+    }
+    return action_result{};
+}
+
+// Hauling items along while walking (\), as game.cpp's haul().
+action_result do_haul( npc &guy )
+{
+    map &here = get_map();
+    if( guy.is_hauling() ) {
+        guy.stop_hauling();
+        return action_result{};
+    }
+    if( here.veh_at( guy.bub_pos() ) ) {
+        return fail( _( "You cannot haul inside vehicles." ) );
+    }
+    if( here.has_flag( TFLAG_DEEP_WATER, guy.bub_pos() ) ) {
+        return fail( _( "You cannot haul while in deep water." ) );
+    }
+    if( !here.can_put_items( guy.bub_pos() ) ) {
+        return fail( _( "You cannot haul items here." ) );
+    }
+    const map_stack items = here.i_at( guy.bub_pos() );
+    if( std::none_of( items.begin(), items.end(), []( const item * it ) {
+    return !it->made_of( LIQUID );
+    } ) ) {
+        return fail( _( "There are no items to haul here." ) );
+    }
+    guy.start_hauling();
+    return action_result{};
+}
+
+// After a step while hauling: the items left behind come along, as
+// game::start_hauling does for the player.
+void continue_hauling( npc &guy, const tripoint_bub_ms &from )
+{
+    map &here = get_map();
+    if( !here.can_put_items( guy.bub_pos() ) || here.veh_at( guy.bub_pos() ) ||
+        here.has_flag( TFLAG_DEEP_WATER, guy.bub_pos() ) ) {
+        guy.stop_hauling();
+        return;
+    }
+    std::vector<item *> targets;
+    std::vector<int> quantities;
+    for( item *const &it : here.i_at( from ) ) {
+        if( it->made_of( LIQUID ) ) {
+            continue;
+        }
+        targets.push_back( it );
+        quantities.push_back( 0 );
+    }
+    if( targets.empty() ) {
+        guy.stop_hauling();
+        return;
+    }
+    guy.assign_activity( std::make_unique<player_activity>( std::make_unique<move_items_activity_actor>(
+                             targets, quantities, false, tripoint_rel_ms() ) ) );
+}
+
 action_result do_move( npc &guy, int dx, int dy )
 {
     // The sprite looks the way the player moves, as the avatar's does.
@@ -1119,6 +1231,12 @@ action_result do_move( npc &guy, int dx, int dy )
         guy.facing = FD_LEFT;
     }
     map &here = get_map();
+    // Dragging what we hold: it moves first (or blocks the step), as in
+    // game::walk_move.
+    if( guy.get_grab_type() != OBJECT_NONE &&
+        g->grabbed_move( tripoint_rel_ms( dx, dy, 0 ), false, &guy ) ) {
+        return action_result{};
+    }
     const tripoint_bub_ms dest = guy.bub_pos() + tripoint_rel_ms( dx, dy, 0 );
     if( !here.inbounds( dest ) || !in_safe_area( dest ) ) {
         return fail( string_format( _( "You can't go any further away from %s." ), host_name() ) );
@@ -1174,6 +1292,7 @@ action_result do_move( npc &guy, int dx, int dy )
         return fail( string_format( _( "There is a %s in the way." ), here.obstacle_name( dest ) ) );
     }
     const int moves_before = guy.get_moves();
+    const tripoint_bub_ms from = guy.bub_pos();
     guy.move_to( dest, true );
     if( guy.get_moves() == moves_before && guy.bub_pos() != dest ) {
         return fail( _( "You can't move there." ) );
@@ -1181,6 +1300,14 @@ action_result do_move( npc &guy, int dx, int dy )
     // Walking and running cost stamina, as they do for the player.
     if( guy.bub_pos() == dest ) {
         guy.burn_move_stamina( moves_before - guy.get_moves() );
+        // As game::walk_move tells the player.
+        if( here.has_flag_ter_or_furn( TFLAG_HIDE_PLACE, dest ) &&
+            guy.get_size() <= creature_size::medium ) {
+            guy.add_msg_if_player( m_good, _( "You are hiding in the %s." ), here.name( dest ) );
+        }
+        if( guy.is_hauling() ) {
+            continue_hauling( guy, from );
+        }
     }
     return action_result{};
 }
@@ -2477,6 +2604,8 @@ action_result execute( peer_t &p, npc &guy, message &m )
     }
     if( a == "wait" ) {
         p.auto_wait_turns = std::clamp( jo.get_int( "turns", 1 ), 1, 24 * 60 * 60 );
+        p.wait_until = jo.get_string( "until", "" );
+        p.wait_weather = get_weather().weather_id;
         p.wait_known_hostiles = visible_hostiles( guy );
         guy.add_msg_if_player( m_info, _( "You start waiting." ) );
         return action_result{};
@@ -2508,6 +2637,17 @@ action_result execute( peer_t &p, npc &guy, message &m )
     }
     if( a == "examine" ) {
         return do_examine( guy, read_bub( jo ) );
+    }
+    if( a == "grab" ) {
+        return do_grab( guy, jo );
+    }
+    if( a == "haul" ) {
+        return do_haul( guy );
+    }
+    if( a == "peek" ) {
+        // The player peeked on their own screen; it takes time like game::peek.
+        guy.mod_moves( -200 );
+        return action_result{};
     }
     if( a == "read" ) {
         return do_read( guy, jo );
@@ -3181,6 +3321,10 @@ bool host_proxy_turn( npc &guy )
                 guy.add_msg_if_player( m_warning, _( "You stop waiting: you see a %s!" ), what );
                 continue;
             }
+            if( ( p->wait_until == "stamina" && guy.get_stamina() >= guy.get_stamina_max() ) ||
+                ( p->wait_until == "weather" && get_weather().weather_id != p->wait_weather ) ) {
+                p->auto_wait_turns = 1;
+            }
             --p->auto_wait_turns;
             character_funcs::do_pause( guy );
             if( p->auto_wait_turns == 0 ) {
@@ -3467,6 +3611,29 @@ void share_revealed_overmap( const Character &who, const tripoint_abs_omt &cente
         }
     }
     host::send( p->id, "{\"t\":\"reveal\",\"tiles\":[" + tiles + "]}" );
+}
+
+void share_sound_marker( const Character &who, const tripoint_bub_ms &p )
+{
+    if( !is_host() ) {
+        return;
+    }
+    if( host::peer_t *peer = host::peer_of_proxy( who.getID() ) ) {
+        peer->sound_marks.push_back( bub_to_abs( p ) );
+    }
+}
+
+void host_tile_changed( const tripoint_abs_ms &p )
+{
+    if( !is_host() || host::peers.empty() ) {
+        return;
+    }
+    const tripoint_abs_sm sm = project_to<coords::sm>( p );
+    for( auto &[id, peer] : host::peers ) {
+        if( peer.joined ) {
+            peer.forced.insert( sm );
+        }
+    }
 }
 
 bool remote_prompts_active()

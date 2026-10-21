@@ -2454,7 +2454,8 @@ void activity_handlers::vibe_do_turn( player_activity *act, player *p )
 void activity_handlers::start_engines_finish( player_activity *act, player *p )
 {
     act->set_to_null();
-    vehicle *veh = g->remoteveh();
+    // Co-op: a remote player's character starts the vehicle it is in.
+    vehicle *veh = p->is_avatar() ? g->remoteveh() : nullptr;
     map &here = get_map();
     if( !veh ) {
         veh = veh_pointer_or_null( here.veh_at( act->placement ) );
@@ -2495,30 +2496,30 @@ void activity_handlers::start_engines_finish( player_activity *act, player *p )
     sfx::do_vehicle_engine_sfx();
 
     if( attempted == 0 ) {
-        add_msg( m_info, _( "The %s doesn't have an engine!" ), veh->name );
+        p->add_msg_if_player( m_info, _( "The %s doesn't have an engine!" ), veh->name );
     } else if( non_muscle_attempted > 0 ) {
         //Some non-muscle engines tried to start
         if( non_muscle_attempted == non_muscle_started ) {
             //All of the non-muscle engines started
-            add_msg( vgettext( "The %s's engine starts up.",
+            p->add_msg_if_player( vgettext( "The %s's engine starts up.",
                                "The %s's engines start up.", non_muscle_started ), veh->name );
         } else if( non_muscle_started > 0 ) {
             //Only some of the non-muscle engines started
-            add_msg( vgettext( "One of the %s's engines start up.",
+            p->add_msg_if_player( vgettext( "One of the %s's engines start up.",
                                "Some of the %s's engines start up.", non_muscle_started ), veh->name );
         } else if( non_combustion_started > 0 ) {
             //Non-combustions "engines" started
-            add_msg( _( "The %s is ready for movement." ), veh->name );
+            p->add_msg_if_player( _( "The %s is ready for movement." ), veh->name );
         } else {
             //All of the non-muscle engines failed
-            add_msg( m_bad, vgettext( "The %s's engine fails to start.",
+            p->add_msg_if_player( m_bad, vgettext( "The %s's engine fails to start.",
                                       "The %s's engines fail to start.", non_muscle_attempted ), veh->name );
         }
     }
 
     if( take_control && !veh->engine_on && !veh->velocity ) {
         p->controlling_vehicle = false;
-        add_msg( _( "You let go of the controls." ) );
+        p->add_msg_if_player( _( "You let go of the controls." ) );
     }
 }
 

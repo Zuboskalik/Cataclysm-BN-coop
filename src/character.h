@@ -2666,6 +2666,12 @@ class Character : public Creature, public location_visitable<Character>
         int volume = 0;
         // Relative direction of a grab, add to posx, posy to get the coordinates of the grabbed thing.
         tripoint_rel_ms grab_point = tripoint_rel_ms::zero();
+        // What is grabbed (furniture, vehicle).  On Character so that, in
+        // co-op, a remote player's character can drag things too.
+        object_type grab_type = OBJECT_NONE;
+        // Grab furniture / vehicle
+        virtual void grab( object_type grab_type, const tripoint_rel_ms &grab_point = tripoint_rel_ms::zero() );
+        object_type get_grab_type() const;
 
 };
 

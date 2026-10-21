@@ -218,8 +218,7 @@ class avatar : public player
 
         void wake_up() override;
         // Grab furniture / vehicle
-        void grab( object_type grab_type, const tripoint_rel_ms &grab_point = tripoint_rel_ms::zero() );
-        object_type get_grab_type() const;
+        void grab( object_type grab_type, const tripoint_rel_ms &grab_point = tripoint_rel_ms::zero() ) override;
         /** Handles player vomiting effects */
         void vomit();
 
@@ -314,7 +313,6 @@ class avatar : public player
         // Items the player has identified.
         std::unordered_set<itype_id> items_identified;
 
-        object_type grab_type = OBJECT_NONE;
 
         // these are the stat upgrades from stats through kills
 

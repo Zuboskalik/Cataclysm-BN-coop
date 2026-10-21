@@ -2218,6 +2218,8 @@ void map::furn_set(
     const auto abs_pos = map_local_to_abs(*this, p);
     if (get_mapbuffer().is_outside_pocket_dimension_bounds(abs_pos)) { return; }
 
+    // Co-op: the remote players get this submap again with the next update.
+    cata_mp::host_tile_changed(abs_pos);
     get_mapbuffer().set_furn(
         abs_pos,
         {
@@ -2552,6 +2554,7 @@ auto map::ter_set(const tripoint_bub_ms& p, const ter_id& new_terrain) -> bool {
     const auto abs_pos = map_local_to_abs(*this, p);
     if (get_mapbuffer().is_outside_pocket_dimension_bounds(abs_pos)) { return false; }
 
+    cata_mp::host_tile_changed(abs_pos);
     return get_mapbuffer().set_ter(abs_pos, new_terrain, resident_item_lookup());
 }
 

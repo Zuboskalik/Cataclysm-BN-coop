@@ -1073,7 +1073,8 @@ static int try_set_alarm()
     return as_m.ret;
 }
 
-static auto parse_custom_wait_duration( const std::string &value ) -> std::optional<time_duration>
+// Not static: the co-op client parses the same input.
+auto parse_custom_wait_duration( const std::string &value ) -> std::optional<time_duration>
 {
     const auto trimmed_value = trim_whitespaces( value );
     if( trimmed_value.empty() ) {

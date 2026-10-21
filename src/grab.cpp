@@ -102,16 +102,16 @@ auto get_vehicle_str_requirement( vehicle *veh ) -> int
 } // namespace
 
 
-bool game::grabbed_veh_move( const tripoint_rel_ms &dp )
+bool game::grabbed_veh_move( const tripoint_rel_ms &dp, Character &who )
 {
-    const auto grabbed_vehicle_target = vehicle_grab_target_at( m, u.bub_pos() + u.grab_point );
+    const auto grabbed_vehicle_target = vehicle_grab_target_at( m, who.bub_pos() + who.grab_point );
     if( !grabbed_vehicle_target ) {
-        add_msg( m_info, _( "No vehicle at grabbed point." ) );
-        u.grab( OBJECT_NONE );
+        who.add_msg_if_player( m_info, _( "No vehicle at grabbed point." ) );
+        who.grab( OBJECT_NONE );
         return false;
     }
     const auto &grabbed_vehicle_vp = grabbed_vehicle_target->vp;
-    u.grab_point = grabbed_vehicle_target->pos - u.bub_pos();
+    who.grab_point = grabbed_vehicle_target->pos - who.bub_pos();
     auto *grabbed_vehicle = &grabbed_vehicle_vp.vehicle();
     if( !grabbed_vehicle ||
         !grabbed_vehicle->handle_potential_theft( u ) ) {
@@ -121,24 +121,24 @@ bool game::grabbed_veh_move( const tripoint_rel_ms &dp )
     for( const vpart_reference &part : grabbed_vehicle->get_all_parts() ) {
         auto *mon = grabbed_vehicle->get_pet( static_cast<int>( part.part_index() ) );
         if( mon != nullptr && mon->has_effect( effect_harnessed ) ) {
-            add_msg( m_info, _( "You cannot move this vehicle whilst your %s is harnessed!" ),
+            who.add_msg_if_player( m_info, _( "You cannot move this vehicle whilst your %s is harnessed!" ),
                      mon->get_name() );
-            u.grab( OBJECT_NONE );
+            who.grab( OBJECT_NONE );
             return false;
         }
     }
-    const vehicle *veh_under_player = veh_pointer_or_null( m.veh_at( u.bub_pos() ) );
+    const vehicle *veh_under_player = veh_pointer_or_null( m.veh_at( who.bub_pos() ) );
     if( grabbed_vehicle == veh_under_player ) {
-        u.grab_point = -dp;
+        who.grab_point = -dp;
         return false;
     }
 
-    const auto player_next_pos = tripoint_bub_ms( u.bub_pos() + dp );
+    const auto player_next_pos = tripoint_bub_ms( who.bub_pos() + dp );
     const auto horizontal_dp = tripoint_rel_ms( dp.xy(), 0 );
-    const auto horizontal_grab = tripoint_rel_ms( u.grab_point.xy(), 0 );
+    const auto horizontal_grab = tripoint_rel_ms( who.grab_point.xy(), 0 );
     auto dp_veh = -horizontal_grab;
-    const auto prev_grab = u.grab_point;
-    auto next_grab = u.grab_point;
+    const auto prev_grab = who.grab_point;
+    auto next_grab = who.grab_point;
 
     bool zigzag = false;
 
@@ -148,7 +148,7 @@ bool game::grabbed_veh_move( const tripoint_rel_ms &dp )
     } else if( std::abs( horizontal_dp.x() + dp_veh.x() ) != 2 &&
                std::abs( horizontal_dp.y() + dp_veh.y() ) != 2 ) {
         // Not actually moving the vehicle, don't do the checks
-        u.grab_point = prev_grab - dp;
+        who.grab_point = prev_grab - dp;
         return false;
     } else if( ( horizontal_dp.x() == prev_grab.x() || horizontal_dp.y() == prev_grab.y() ) &&
                next_grab.x() != 0 && next_grab.y() != 0 ) {
@@ -172,7 +172,7 @@ bool game::grabbed_veh_move( const tripoint_rel_ms &dp )
     // for smaller vehicles, offroad_str_req_cap sanity-checks our results.
     int str_req = std::min( get_vehicle_str_requirement( grabbed_vehicle ),
                             offroad_str_req_cap( grabbed_vehicle ) );
-    int str = character_funcs::get_lift_strength_with_helpers( u );
+    int str = character_funcs::get_lift_strength_with_helpers( who );
     add_msg( m_debug, "str_req: %d", str_req );
 
     //final strength check and outcomes
@@ -184,23 +184,23 @@ bool game::grabbed_veh_move( const tripoint_rel_ms &dp )
 
         //calculate exertion factor and movement penalty
         ///\EFFECT_STR increases speed of dragging vehicles
-        u.moves -= 400 * str_req / std::max( 1, str );
+        who.moves -= 400 * str_req / std::max( 1, str );
         ///\EFFECT_STR decreases stamina cost of dragging vehicles
-        u.mod_stamina( -200 * str_req / std::max( 1, str ) );
+        who.mod_stamina( -200 * str_req / std::max( 1, str ) );
         const int ex = dice( 1, 6 ) - 1 + str_req;
         if( ex > str + 1 ) {
             // Pain and movement penalty if exertion exceeds character strength
-            add_msg( m_bad, _( "You strain yourself to move the %s!" ), grabbed_vehicle->name );
-            u.moves -= 200;
-            u.mod_pain( 1 );
+            who.add_msg_if_player( m_bad, _( "You strain yourself to move the %s!" ), grabbed_vehicle->name );
+            who.moves -= 200;
+            who.mod_pain( 1 );
         } else if( ex >= str ) {
             // Movement is slow if exertion nearly equals character strength
-            add_msg( _( "It takes some time to move the %s." ), grabbed_vehicle->name );
-            u.moves -= 200;
+            who.add_msg_if_player( _( "It takes some time to move the %s." ), grabbed_vehicle->name );
+            who.moves -= 200;
         }
     } else {
-        u.moves -= 100;
-        add_msg( m_bad, _( "You lack the strength to move the %s" ), grabbed_vehicle->name );
+        who.moves -= 100;
+        who.add_msg_if_player( m_bad, _( "You lack the strength to move the %s" ), grabbed_vehicle->name );
         return true;
     }
 
@@ -228,7 +228,7 @@ bool game::grabbed_veh_move( const tripoint_rel_ms &dp )
             .dp = actual_dir,
             .just_detect = true,
             .bash_floor = false,
-            .ignored_critter = &u,
+            .ignored_critter = &who,
         } );
         if( !colls.empty() ) {
             blocker_name = colls.front().target_name;
@@ -245,8 +245,8 @@ bool game::grabbed_veh_move( const tripoint_rel_ms &dp )
     }
 
     if( final_dp_veh == tripoint_rel_ms::zero() ) {
-        add_msg( _( "The %s collides with %s." ), grabbed_vehicle->name, blocker_name );
-        u.grab_point = prev_grab;
+        who.add_msg_if_player( _( "The %s collides with %s." ), grabbed_vehicle->name, blocker_name );
+        who.grab_point = prev_grab;
         return true;
     }
 
@@ -260,7 +260,7 @@ bool game::grabbed_veh_move( const tripoint_rel_ms &dp )
         return false;
     }
 
-    u.grab_point = grabbed_vehicle->bub_part_location( grabbed_part ) - player_next_pos;
+    who.grab_point = grabbed_vehicle->bub_part_location( grabbed_part ) - player_next_pos;
 
     for( const auto p : grabbed_vehicle->wheelcache ) {
         if( one_in( 2 ) ) {

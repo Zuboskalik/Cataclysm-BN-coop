@@ -1,4 +1,6 @@
 #include "iexamine.h"
+#include "mp_session.h"
+#include "gates.h"
 
 #include <algorithm>
 #include <array>
@@ -929,6 +931,45 @@ void iexamine::vending( player &p, const tripoint_bub_ms &examp )
         return;
     }
 
+    // Co-op: a remote player picks from a list on their own screen.
+    if( cata_mp::remote_prompts_active() ) {
+        if( !money ) {
+            p.add_msg_if_player( m_info, _( "You need some money on a cash card to buy things." ) );
+        }
+        bool used = false;
+        for( ;; ) {
+            std::vector<item *> stock( vend_items.begin(), vend_items.end() );
+            if( stock.empty() ) {
+                p.add_msg_if_player( _( "With a beep, the empty vending machine shuts down." ) );
+                return;
+            }
+            std::vector<std::string> names;
+            std::vector<bool> enabled;
+            for( const item *it : stock ) {
+                names.push_back( string_format( "%s  %s", it->tname(), format_money( it->price( false ) ) ) );
+                enabled.push_back( it->price( false ) <= money );
+            }
+            const int pick = cata_mp::remote_choice( string_format( _( "Money left: %s" ),
+                             format_money( money ) ), names, enabled, true );
+            if( pick < 0 || pick >= static_cast<int>( stock.size() ) ) {
+                return;
+            }
+            item *bought = stock[pick];
+            const int iprice = bought->price( false );
+            if( iprice > money ) {
+                p.add_msg_if_player( m_info, _( "You can't afford that item." ) );
+                continue;
+            }
+            if( !used ) {
+                used = true;
+                p.moves -= moves_cost;
+            }
+            money -= iprice;
+            p.use_charges( itype_cash_card, iprice );
+            p.i_add_or_drop( vend_items.remove( bought ) );
+        }
+    }
+
     if( !money ) {
         popup( _( "You need some money on a cash card to buy things." ) );
     }
@@ -1161,7 +1202,8 @@ void iexamine::controls_gate( player &p, const tripoint_bub_ms &examp )
         none( p, examp );
         return;
     }
-    g->toggle_gate( examp );
+    // Whoever uses the controls works them (a remote player's character too).
+    gates::toggle_gate( examp, p );
 }
 
 static bool try_start_hacking( player &p, const tripoint_bub_ms &examp )
@@ -1381,21 +1423,21 @@ void iexamine::chainfence( player &p, const tripoint_bub_ms &examp )
     map &here = get_map();
     if( here.has_flag( flag_CLIMB_SIMPLE, examp ) &&
         p.mutation_value( "movecost_obstacle_modifier" ) <= 0.5f ) {
-        add_msg( _( "You vault over the obstacle with ease." ) );
+        p.add_msg_if_player( _( "You vault over the obstacle with ease." ) );
         p.moves -= 100; // Not tall enough to warrant spider-climbing, so only relevant trait.
     } else if( here.has_flag( flag_CLIMB_SIMPLE, examp ) ) {
-        add_msg( _( "You vault over the obstacle." ) );
+        p.add_msg_if_player( _( "You vault over the obstacle." ) );
         p.moves -= 300; // Most common move cost for barricades pre-change.
     } else if( p.has_trait( trait_ARACHNID_ARMS_OK ) &&
                !p.wearing_something_on( bodypart_id( "torso" ) ) ) {
-        add_msg( _( "Climbing this obstacle is trivial for one such as you." ) );
+        p.add_msg_if_player( _( "Climbing this obstacle is trivial for one such as you." ) );
         p.moves -= 75; // Yes, faster than walking.  6-8 limbs are impressive.
     } else if( p.has_trait( trait_INSECT_ARMS_OK ) &&
                !p.wearing_something_on( bodypart_id( "torso" ) ) ) {
-        add_msg( _( "You quickly scale the fence." ) );
+        p.add_msg_if_player( _( "You quickly scale the fence." ) );
         p.moves -= 90;
     } else if( p.mutation_value( "movecost_obstacle_modifier" ) <= 0.5f ) {
-        add_msg( _( "This obstacle is no match for your freerunning abilities." ) );
+        p.add_msg_if_player( _( "This obstacle is no match for your freerunning abilities." ) );
         p.moves -= 100;
     } else {
         p.moves -= 400;

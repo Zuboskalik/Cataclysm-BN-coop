@@ -13161,3 +13161,14 @@ detached_ptr<item> Character::reduce_charges( item *it, int quantity )
     taken->charges = quantity;
     return taken;
 }
+
+void Character::grab( object_type grab_type, const tripoint_rel_ms &grab_point )
+{
+    this->grab_type = grab_type;
+    this->grab_point = grab_point;
+}
+
+object_type Character::get_grab_type() const
+{
+    return grab_type;
+}

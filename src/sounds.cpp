@@ -2470,6 +2470,19 @@ void sounds::process_sounds_coop()
             const short tile_vol = svol_at( element, loc, avg_absorp, indoors, who->sees( element.origin ) );
             if( tile_vol > threshold ) {
                 describe_sound_to_proxy( *who, element.sound );
+                // A marker where it came from, like the player's, unless the
+                // source is in view.
+                if( element.sound.origin != loc && !who->sees( element.sound.origin ) ) {
+                    std::vector<tripoint_bub_ms> unseen;
+                    for( const tripoint_bub_ms &p : map.points_in_radius( element.sound.origin, 1 ) ) {
+                        if( p.z() != loc.z() || !who->sees( p ) ) {
+                            unseen.push_back( p );
+                        }
+                    }
+                    if( !unseen.empty() ) {
+                        cata_mp::share_sound_marker( *who, random_entry( unseen ) );
+                    }
+                }
             }
         }
     }
@@ -3043,6 +3056,14 @@ void sounds::clear_floodfill_que( const bool &soundperf )
 void sounds::reset_markers()
 {
     sound_markers.clear();
+}
+
+void sounds::add_marker( const tripoint_bub_ms &p )
+{
+    sound_event se;
+    se.origin = p;
+    se.description = _( "a noise" );
+    sound_markers.emplace( p, se );
 }
 
 std::vector<tripoint_bub_ms> sounds::get_footstep_markers()

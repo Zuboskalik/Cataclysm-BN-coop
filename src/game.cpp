@@ -13788,21 +13788,21 @@ static auto furniture_move_effort_for(
     };
 }
 
-auto game::grabbed_furn_move( const tripoint_rel_ms &dp ) -> bool
+auto game::grabbed_furn_move( const tripoint_rel_ms &dp, Character &who ) -> bool
 {
     // Furniture: pull, push, or standing still and nudging object around.
     // Can push furniture out of reach.
-    const auto fpos = tripoint_bub_ms( u.bub_pos() + u.grab_point );
+    const auto fpos = tripoint_bub_ms( who.bub_pos() + who.grab_point );
     // supposed position of grabbed furniture
     if( !m.has_furn( fpos ) ) {
         // Where did it go? We're grabbing thin air so reset.
-        add_msg( m_info, _( "No furniture at grabbed point." ) );
-        u.grab( OBJECT_NONE );
+        who.add_msg_if_player( m_info, _( "No furniture at grabbed point." ) );
+        who.grab( OBJECT_NONE );
         return false;
     }
 
     const auto horizontal_dp = tripoint_rel_ms( dp.xy(), 0 );
-    const auto horizontal_grab = tripoint_rel_ms( u.grab_point.xy(), 0 );
+    const auto horizontal_grab = tripoint_rel_ms( who.grab_point.xy(), 0 );
     const auto pushing_furniture = horizontal_dp ==  horizontal_grab;
     const auto pulling_furniture = horizontal_dp == -horizontal_grab;
     const auto shifting_furniture = !pushing_furniture && !pulling_furniture;
@@ -13819,7 +13819,7 @@ auto game::grabbed_furn_move( const tripoint_rel_ms &dp ) -> bool
                              m.passable( fdest ) &&
                              critter_at<npc>( fdest ) == nullptr &&
                              critter_at<monster>( fdest ) == nullptr &&
-                             ( !pulling_furniture || is_empty( u.bub_pos() + dp ) ) &&
+                             ( !pulling_furniture || is_empty( who.bub_pos() + dp ) ) &&
                              ( !has_floor || m.has_flag( "FLAT", fdest ) || ramp_drag ) &&
                              !m.has_furn( fdest ) &&
                              !m.veh_at( fdest ) &&
@@ -13828,8 +13828,8 @@ auto game::grabbed_furn_move( const tripoint_rel_ms &dp ) -> bool
 
     const auto &furntype = m.furn( fpos ).obj();
     if( furntype.move_str_req < 0 ) {
-        add_msg( _( "You can't move the %s." ), furntype.name() );
-        u.grab( OBJECT_NONE );
+        who.add_msg_if_player( _( "You can't move the %s." ), furntype.name() );
+        who.grab( OBJECT_NONE );
         return false;
     }
 
@@ -13845,56 +13845,56 @@ auto game::grabbed_furn_move( const tripoint_rel_ms &dp ) -> bool
                              m.furn( fpos ).obj().has_flag( "SEALED" );
 
     const auto effort = furniture_move_effort_for( {
-        .mover = u,
+        .mover = who,
         .here = m,
         .from = fpos,
         .to = fdest,
     } );
     if( !canmove ) {
         // TODO: What is something?
-        add_msg( _( "The %s collides with something." ), furntype.name() );
-        u.moves -= 50;
+        who.add_msg_if_player( _( "The %s collides with something." ), furntype.name() );
+        who.moves -= 50;
         return true;
         ///\EFFECT_STR determines ability to drag furniture
     } else if( effort.str_req > effort.adjusted_str &&
                one_in( std::max( 20 - effort.str_req - effort.adjusted_str, 2 ) ) ) {
-        add_msg( m_bad, _( "You strain yourself trying to move the heavy %s!" ),
+        who.add_msg_if_player( m_bad, _( "You strain yourself trying to move the heavy %s!" ),
                  furntype.name() );
-        u.moves -= 100;
-        u.mod_pain( 1 ); // Hurt ourselves.
+        who.moves -= 100;
+        who.mod_pain( 1 ); // Hurt ourselves.
         return true; // furniture and or obstacle wins.
     } else if( !src_item_ok && !only_liquid_items && dst_items > 0 ) {
-        add_msg( _( "There's stuff in the way." ) );
-        u.moves -= 50;
+        who.add_msg_if_player( _( "There's stuff in the way." ) );
+        who.moves -= 50;
         return true;
     }
 
-    u.moves -= effort.move_cost;
-    u.mod_stamina( -effort.stamina_cost, false );
+    who.moves -= effort.move_cost;
+    who.mod_stamina( -effort.stamina_cost, false );
     // Additional penalty if we can't comfortably move it.
     if( effort.str_req > effort.adjusted_str ) {
         auto move_penalty = static_cast<int>( std::pow( effort.str_req, 2.0 ) + 100.0 );
         if( move_penalty <= 1000 ) {
             if( effort.adjusted_str >= effort.str_req - 3 ) {
-                u.moves -= std::max( 3000, move_penalty * 10 );
-                add_msg( m_bad, _( "The %s is really heavy!" ), furntype.name() );
+                who.moves -= std::max( 3000, move_penalty * 10 );
+                who.add_msg_if_player( m_bad, _( "The %s is really heavy!" ), furntype.name() );
                 if( one_in( 3 ) ) {
-                    add_msg( m_bad, _( "You fail to move the %s." ), furntype.name() );
+                    who.add_msg_if_player( m_bad, _( "You fail to move the %s." ), furntype.name() );
                     return true;
                 }
             } else {
-                u.moves -= 100;
-                add_msg( m_bad, _( "The %s is too heavy for you to budge." ), furntype.name() );
+                who.moves -= 100;
+                who.add_msg_if_player( m_bad, _( "The %s is too heavy for you to budge." ), furntype.name() );
                 return true;
             }
         }
-        u.moves -= move_penalty;
+        who.moves -= move_penalty;
         if( move_penalty > 500 ) {
-            add_msg( _( "Moving the heavy %s is taking a lot of time!" ),
+            who.add_msg_if_player( _( "Moving the heavy %s is taking a lot of time!" ),
                      furntype.name() );
         } else if( move_penalty > 200 ) {
             if( one_in( 3 ) ) { // Nag only occasionally.
-                add_msg( _( "It takes some time to move the heavy %s." ),
+                who.add_msg_if_player( _( "It takes some time to move the heavy %s." ),
                          furntype.name() );
             }
         }
@@ -13911,7 +13911,7 @@ auto game::grabbed_furn_move( const tripoint_rel_ms &dp ) -> bool
     sounds::sound( se );
 
     if( !m.move_furn( fpos, fdest, {
-    .mover = &u,
+    .mover = &who,
     .pulling = pulling_furniture,
 } ) ) {
         return true;
@@ -13919,54 +13919,56 @@ auto game::grabbed_furn_move( const tripoint_rel_ms &dp ) -> bool
 
     if( shifting_furniture ) {
         // We didn't move
-        auto d_sum = fdest - u.bub_pos();
+        auto d_sum = fdest - who.bub_pos();
         if( std::abs( d_sum.x() ) < 2 && std::abs( d_sum.y() ) < 2 ) {
-            u.grab_point = d_sum; // furniture moved relative to us
+            who.grab_point = d_sum; // furniture moved relative to us
         } else { // we pushed furniture out of reach
-            add_msg( _( "You let go of the %s." ), furntype.name() );
-            u.grab( OBJECT_NONE );
+            who.add_msg_if_player( _( "You let go of the %s." ), furntype.name() );
+            who.grab( OBJECT_NONE );
         }
         return true; // We moved furniture but stayed still.
     }
 
-    const auto player_next_pos = tripoint_bub_ms( u.bub_pos() + dp );
-    u.grab_point = fdest - player_next_pos;
+    const auto player_next_pos = tripoint_bub_ms( who.bub_pos() + dp );
+    who.grab_point = fdest - player_next_pos;
 
     if( pushing_furniture && m.impassable( fpos ) ) {
         // Not sure how that chair got into a wall, but don't let player follow.
-        add_msg( _( "You let go of the %1$s as it slides past %2$s." ),
+        who.add_msg_if_player( _( "You let go of the %1$s as it slides past %2$s." ),
                  furntype.name(), m.tername( fdest ) );
-        u.grab( OBJECT_NONE );
+        who.grab( OBJECT_NONE );
         return true;
     }
 
     return false;
 }
 
-auto game::grabbed_move( const tripoint_rel_ms &dp, const bool allow_furniture_z_move ) -> bool
+auto game::grabbed_move( const tripoint_rel_ms &dp, const bool allow_furniture_z_move,
+                          Character *const dragger ) -> bool
 {
-    if( u.get_grab_type() == OBJECT_NONE ) {
+    Character &who = dragger != nullptr ? *dragger : static_cast<Character &>( u );
+    if( who.get_grab_type() == OBJECT_NONE ) {
         return false;
     }
 
-    if( dp.z() != 0 && u.get_grab_type() != OBJECT_VEHICLE &&
-        !( u.get_grab_type() == OBJECT_FURNITURE && allow_furniture_z_move ) ) {
+    if( dp.z() != 0 && who.get_grab_type() != OBJECT_VEHICLE &&
+        !( who.get_grab_type() == OBJECT_FURNITURE && allow_furniture_z_move ) ) {
         // Furniture can only follow z-level movement through explicit ramp dragging.
         return false;
     }
 
     // vehicle: pulling, pushing, or moving around the grabbed object.
-    if( u.get_grab_type() == OBJECT_VEHICLE ) {
-        return grabbed_veh_move( dp );
+    if( who.get_grab_type() == OBJECT_VEHICLE ) {
+        return grabbed_veh_move( dp, who );
     }
 
-    if( u.get_grab_type() == OBJECT_FURNITURE ) {
-        return grabbed_furn_move( dp );
+    if( who.get_grab_type() == OBJECT_FURNITURE ) {
+        return grabbed_furn_move( dp, who );
     }
 
-    add_msg( m_info, _( "Nothing at grabbed point %d,%d,%d or bad grabbed object type." ),
-             u.grab_point.x(), u.grab_point.y(), u.grab_point.z() );
-    u.grab( OBJECT_NONE );
+    who.add_msg_if_player( m_info, _( "Nothing at grabbed point %d,%d,%d or bad grabbed object type." ),
+             who.grab_point.x(), who.grab_point.y(), who.grab_point.z() );
+    who.grab( OBJECT_NONE );
     return false;
 }
 

@@ -1496,7 +1496,10 @@ void Character::melee_attack( Creature &t, bool allow_special, const matec_id *f
 {
     melee::melee_stats.attack_count += 1;
     // Old check for if the target is player retained in case you somehow hit yourself
-    if( !t.is_player() && is_player() ) {
+    // Co-op: a remote player's character is no AI to flag (the effect would
+    // show up on their screen).
+    const Character *tc = t.as_character();
+    if( !t.is_player() && is_player() && !( tc != nullptr && cata_mp::is_proxy( *tc ) ) ) {
         t.add_effect( effect_hit_by_player, 10_minutes ); // Flag as attacked by us for AI
     }
     if( is_mounted() ) {

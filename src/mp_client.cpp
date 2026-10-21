@@ -67,6 +67,7 @@
 #include "ranged.h"
 #include "recipe.h"
 #include "string_formatter.h"
+#include "sounds.h"
 #include "string_input_popup.h"
 #include "string_utils.h"
 #include "translations.h"
@@ -105,6 +106,8 @@ struct mp_client_game_access {
         return g.start_game();
     }
 };
+
+auto parse_custom_wait_duration( const std::string &value ) -> std::optional<time_duration>;
 
 namespace cata_mp::client
 {
@@ -465,6 +468,10 @@ void apply_state( message &m )
     }
     if( jo.has_int( "turn" ) ) {
         const time_point turn = time_point::from_turn( jo.get_int( "turn" ) );
+        // Sound markers last a turn, as the player's do.
+        if( turn != calendar::turn ) {
+            sounds::reset_markers();
+        }
         if( turn != calendar::turn ) {
             calendar::turn = turn;
         }
@@ -573,6 +580,17 @@ void apply_state( message &m )
                 veh.fuel_used_last_turn.clear();
             }
             veh.fuel_used_last_turn[itype_id( e.get_string( 3 ) )] = static_cast<float>( e.get_float( 4 ) );
+        }
+    }
+
+    // ---- sounds our character heard
+    if( jo.has_array( "smark" ) ) {
+        for( JsonArray e : jo.get_array( "smark" ) ) {
+            const tripoint_bub_ms p = abs_to_bub( tripoint_abs_ms( e.get_int( 0 ), e.get_int( 1 ),
+                                                  e.get_int( 2 ) ) );
+            if( here.inbounds( p ) ) {
+                sounds::add_marker( p );
+            }
         }
     }
 
@@ -760,26 +778,72 @@ std::string item_fields( item *it )
                           json_quote( item_match_name( *it ) ) );
 }
 
-bool choose_wait_duration( int &turns )
+// Like the single player's wait menu.  `until` is "weather" or "stamina"
+// for waits that end on a condition the host checks.
+bool choose_wait_duration( int &turns, std::string &until )
 {
+    avatar &u = get_avatar();
+    until.clear();
+    std::map<int, time_duration> durations;
     uilist menu;
-    menu.text = _( "Wait for how long?  (Press the pause key again to stop waiting early.)" );
-    const std::vector<std::pair<std::string, time_duration>> options = {
-        { _( "5 minutes" ), 5_minutes },
-        { _( "30 minutes" ), 30_minutes },
-        { _( "1 hour" ), 1_hours },
-        { _( "2 hours" ), 2_hours },
-        { _( "3 hours" ), 3_hours },
-        { _( "6 hours" ), 6_hours },
+    const auto add = [&]( int ret, int key, const std::string &caption, const time_duration &d ) {
+        const std::string dur = to_string( d );
+        menu.addentry( ret, true, key, caption.empty() ? dur : string_format( "%s (%s)", caption, dur ) );
+        durations.emplace( ret, d );
     };
-    for( size_t i = 0; i < options.size(); ++i ) {
-        menu.addentry( static_cast<int>( i ), true, static_cast<int>( '1' + i ), options[i].first );
+    if( u.get_stamina() < u.get_stamina_max() ) {
+        menu.addentry( 12, true, 'w', _( "Wait until you catch your breath" ) );
     }
+    add( 1, '1', "", 5_minutes );
+    add( 2, '2', "", 30_minutes );
+    add( 3, '3', "", 1_hours );
+    add( 4, '4', "", 2_hours );
+    add( 5, '5', "", 3_hours );
+    add( 6, '6', "", 6_hours );
+    menu.addentry( 13, true, 'c', _( "Custom input" ) );
+    const bool has_watch = u.has_watch();
+    if( u.abs_pos().z() >= 0 || has_watch ) {
+        const time_point last_midnight = calendar::turn - time_past_midnight( calendar::turn );
+        const auto before = []( const time_point & p ) {
+            return ( p > calendar::turn ? p : p + 1_days ) - calendar::turn;
+        };
+        add( 7, 'd', _( "Wait till daylight" ), before( daylight_time( calendar::turn ) ) );
+        add( 8, 'n', _( "Wait till noon" ), before( last_midnight + 12_hours ) );
+        add( 9, 'k', _( "Wait till night" ), before( night_time( calendar::turn ) ) );
+        add( 10, 'm', _( "Wait till midnight" ), before( last_midnight ) );
+        menu.addentry( 11, true, 'W', _( "Wait till weather changes" ) );
+    }
+    menu.text = has_watch ? string_format( _( "It's %s now. " ),
+                                           to_string_time_of_day( calendar::turn ) ) : "";
+    menu.text += _( "Wait for how long?  (Press the pause key again to stop waiting early.)" );
     menu.query();
-    if( menu.ret < 0 || static_cast<size_t>( menu.ret ) >= options.size() ) {
+    // Waits for a condition still end after a day at most.
+    if( menu.ret == 11 || menu.ret == 12 ) {
+        until = menu.ret == 11 ? "weather" : "stamina";
+        turns = to_turns<int>( 1_days );
+        return true;
+    }
+    if( menu.ret == 13 ) {
+        const std::string input = string_input_popup()
+                                  .title( _( "How long?  (e.g. 10s, 15m, 1h)" ) )
+                                  .identifier( "wait_duration" )
+                                  .query_string();
+        if( input.empty() ) {
+            return false;
+        }
+        const std::optional<time_duration> parsed = parse_custom_wait_duration( input );
+        if( !parsed || *parsed <= 0_turns ) {
+            add_msg( m_bad, _( "Invalid duration. Use s, m, h, or d suffixes." ) );
+            return false;
+        }
+        turns = to_turns<int>( *parsed );
+        return true;
+    }
+    const auto it = durations.find( menu.ret );
+    if( it == durations.end() ) {
         return false;
     }
-    turns = to_turns<int>( options[menu.ret].second );
+    turns = std::max( 1, to_turns<int>( it->second ) );
     return true;
 }
 
@@ -2289,6 +2353,9 @@ bool client_do_turn()
         S.monsters.clear();
         client::rebuild_monster_seeds();
         S.npc_ids.clear();
+        // An aim spanning turns holds a reference to our weapon: drop it
+        // before the game checks that no references are left.
+        client::pending_aim.reset();
         g->uquit = QUIT_NOSAVED;
         return true;
     }
@@ -2332,6 +2399,18 @@ bool client_intercept_action( action_id act,
 {
     if( !is_client() ) {
         return false;
+    }
+    if( act == ACTION_PEEK ) {
+        // The view is ours, but a peek takes time as on the host: it is
+        // charged there as an action.
+        avatar &peeker = get_avatar();
+        const int before = peeker.moves;
+        g->peek();
+        if( peeker.moves < before ) {
+            client::send_action( "peek" );
+        }
+        peeker.moves = before;
+        return true;
     }
     if( client::is_local_ui_action( act ) ) {
         return false;
@@ -2427,9 +2506,11 @@ bool client_intercept_action( action_id act,
             return true;
         case ACTION_WAIT: {
             int turns = 0;
-            if( client::choose_wait_duration( turns ) ) {
+            std::string until;
+            if( client::choose_wait_duration( turns, until ) ) {
                 S.waiting = true;
-                client::send_action( "wait", string_format( ",\"turns\":%d", turns ) );
+                client::send_action( "wait", string_format( ",\"turns\":%d,\"until\":%s", turns,
+                                     json_quote( until ) ) );
             }
             return true;
         }
@@ -2453,6 +2534,23 @@ bool client_intercept_action( action_id act,
             }
             return true;
         }
+        case ACTION_GRAB: {
+            // Letting go needs no direction; the host knows what we hold.
+            if( u.get_grab_type() != OBJECT_NONE ) {
+                client::send_action( "grab", ",\"release\":true" );
+                return true;
+            }
+            const std::optional<tripoint_bub_ms> p = choose_adjacent( _( "Grab where?" ) );
+            if( !p ) {
+                add_msg( _( "Never mind." ) );
+                return true;
+            }
+            client::send_action( "grab", client::pos_fields( *p ) );
+            return true;
+        }
+        case ACTION_HAUL:
+            client::send_action( "haul" );
+            return true;
         case ACTION_SMASH: {
             const std::optional<tripoint_bub_ms> p = choose_adjacent_highlight( _( "Smash where?" ),
                     _( "There is nothing to smash nearby." ), ACTION_SMASH, true );

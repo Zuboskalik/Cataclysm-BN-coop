@@ -198,6 +198,14 @@ void share_custom_explosion( const std::map<tripoint_bub_ms, nc_color> &area,
 // `radius` of `center`; their client is told.
 void share_revealed_overmap( const Character &who, const tripoint_abs_omt &center, int radius );
 
+// Host: terrain or furniture at `p` changed; the submap goes out to the
+// remote players with the next update even when far from them.
+void host_tile_changed( const tripoint_abs_ms &p );
+
+// Host: `who` (a remote player's character) heard a sound around `p`; their
+// client shows a sound marker there.
+void share_sound_marker( const Character &who, const tripoint_bub_ms &p );
+
 // ---- conversations ----------------------------------------------------------
 // The NPC said `challenge`; the remote player picks one of `responses` in a
 // conversation window like the player's.  `repeat`: the same question again

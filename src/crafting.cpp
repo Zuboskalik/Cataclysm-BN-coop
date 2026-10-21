@@ -2311,7 +2311,7 @@ void crafting::complete_disassemble( Character &who, const iuse_location &target
     item &dis_item = org_item;
     float component_success_chance = std::min( std::pow( 0.8, dis_item.damage_level( 4 ) ), 1.0 );
 
-    add_msg( _( "You disassemble the %s into its components." ), dis_item.tname() );
+    who.add_msg_if_player( _( "You disassemble the %s into its components." ), dis_item.tname() );
     // Remove any batteries, ammo and mods first
     remove_ammo( dis_item, who );
     remove_radio_mod( dis_item, *who.as_player() );
@@ -2392,14 +2392,14 @@ void crafting::complete_disassemble( Character &who, const iuse_location &target
     for( detached_ptr<item> &newit : components.clear() ) {
         const bool comp_success = ( dice( skill_dice, skill_sides ) > dice( diff_dice,  diff_sides ) );
         if( dis.difficulty != 0 && !comp_success ) {
-            add_msg( m_bad, _( "You fail to recover %s." ), newit->tname() );
+            who.add_msg_if_player( m_bad, _( "You fail to recover %s." ), newit->tname() );
             continue;
         }
         const bool dmg_success = component_success_chance > rng_float( 0, 1 );
         if( !dmg_success ) {
             // Show reason for failure (damaged item, tname contains the damage adjective)
             //~ %1s - material, %2$s - disassembled item
-            add_msg( m_bad, _( "You fail to recover %1$s from the %2$s." ), newit->tname(),
+            who.add_msg_if_player( m_bad, _( "You fail to recover %1$s from the %2$s." ), newit->tname(),
                      dis_item.tname() );
             continue;
         }
@@ -2432,14 +2432,14 @@ void crafting::complete_disassemble( Character &who, const iuse_location &target
             if( x_in_y( skill_bonus, 4.0 ) ) {
                 // TODO: change to forward an id or a reference
                 who.learn_recipe( &*dis.ident() );
-                add_msg( m_good, _( "You learned a recipe for %s from disassembling it!" ),
+                who.add_msg_if_player( m_good, _( "You learned a recipe for %s from disassembling it!" ),
                          dis_item.tname() );
             } else {
-                add_msg( m_info, _( "You might be able to learn a recipe for %s if you disassemble another." ),
+                who.add_msg_if_player( m_info, _( "You might be able to learn a recipe for %s if you disassemble another." ),
                          dis_item.tname() );
             }
         } else {
-            add_msg( m_info, _( "If you had better skills, you might learn a recipe next time." ) );
+            who.add_msg_if_player( m_info, _( "If you had better skills, you might learn a recipe next time." ) );
         }
     }
 }

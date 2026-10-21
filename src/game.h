@@ -949,9 +949,6 @@ class game : public submap_load_listener
         /** Check for dangerous stuff at dest_loc, return false if the player decides
         not to step there */
         // Handle pushing during move, returns true if it handled the move
-        auto grabbed_move( const tripoint_rel_ms &dp, bool allow_furniture_z_move = false ) -> bool;
-        bool grabbed_veh_move( const tripoint_rel_ms &dp );
-        auto grabbed_furn_move( const tripoint_rel_ms &dp ) -> bool;
 
         void control_vehicle(); // Use vehicle controls  '^'
         void examine( const tripoint_bub_ms &p ); // Examine nearby terrain  'e'
@@ -968,6 +965,12 @@ class game : public submap_load_listener
         void butcher(); // Butcher a corpse  'B'
         void dissect(); // dissect a corpse
     public:
+        // `who` drags what it grabbed; the avatar when null (in co-op, a
+        // remote player's character otherwise).
+        auto grabbed_move( const tripoint_rel_ms &dp, bool allow_furniture_z_move = false,
+                           Character *who = nullptr ) -> bool;
+        bool grabbed_veh_move( const tripoint_rel_ms &dp, Character &who );
+        auto grabbed_furn_move( const tripoint_rel_ms &dp, Character &who ) -> bool;
         // Places the player at the specified point; hurts feet, lists items etc.
         auto place_player( const tripoint_bub_ms &dest ) -> point_rel_sm;
         void place_player_overmap( const tripoint_abs_omt &om_dest );

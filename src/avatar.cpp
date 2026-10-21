@@ -854,11 +854,6 @@ void avatar::grab( object_type grab_type, const tripoint_rel_ms &grab_point )
     path_settings->avoid_rough_terrain = grab_type != OBJECT_NONE;
 }
 
-object_type avatar::get_grab_type() const
-{
-    return grab_type;
-}
-
 static void skim_book_msg( const item &book, avatar &u )
 {
     if( !book.type->book ) {
