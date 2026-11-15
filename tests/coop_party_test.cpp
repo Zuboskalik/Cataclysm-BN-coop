@@ -432,3 +432,55 @@ TEST_CASE("remote player is not included in crafting or study helpers", "[coop][
         CHECK(helpers_with_npc.front()->getID() == follower.getID());
     }
 }
+
+TEST_CASE("remote player waiting is not interrupted by distant hostiles", "[coop][wait]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto pos = tripoint_bub_ms{60, 60, 0};
+    get_avatar().setpos(pos);
+
+    const auto name = std::string("Waiter");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(985, "test");
+    cata_mp::host::handle_line(
+        985,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        985,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+
+    npc* waiter = nullptr;
+    for (npc& guy : g->all_npcs()) {
+        if (guy.get_value("coop_player") == name) { waiter = &guy; }
+    }
+    REQUIRE(waiter != nullptr);
+    waiter->setpos(pos + tripoint_rel_ms::east());
+
+    // Hostile monster far away (15 tiles) should not interrupt waiting.
+    spawn_test_monster("mon_zombie", pos + tripoint_rel_ms(15, 0, 0));
+
+    cata_mp::host::handle_line(985, R"({"t":"act","seq":1,"a":"wait","turns":5})");
+
+    map& here = get_map();
+    get_avatar().set_moves(100);
+    avatar_action::move(get_avatar(), here, tripoint_rel_ms::north());
+    get_avatar().set_moves(0);
+    g->do_turn();
+
+    // Waiting is still active (turns decremented, not zeroed).
+    CHECK(cata_mp::host::auto_wait_turns(985) > 0);
+
+    // Hostile monster dangerously close (2 tiles away) interrupts waiting.
+    spawn_test_monster("mon_zombie", waiter->bub_pos() + tripoint_rel_ms(2, 0, 0));
+
+    get_avatar().set_moves(100);
+    avatar_action::move(get_avatar(), here, tripoint_rel_ms::south());
+    get_avatar().set_moves(0);
+    g->do_turn();
+
+    CHECK(cata_mp::host::auto_wait_turns(985) == 0);
+
+    cata_mp::host::handle_closed(985, "test over");
+    cata_mp::host_end_of_turn();
+}

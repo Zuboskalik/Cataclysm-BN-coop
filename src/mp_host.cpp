@@ -140,8 +140,8 @@ struct peer_t {
     bool dont_wait = false;
     // Turns in a row the character's activity did not use any moves.
     int stalled_activity_turns = 0;
-    // Hostiles already in sight when the player started waiting.
-    std::set<const monster*> wait_known_hostiles;
+    // Health when the player started waiting (damage interrupts).
+    int wait_hp = 0;
     // Something that would interrupt the character's activity; the player is
     // asked whether to stop before the character's next turn.
     std::optional<std::pair<distraction_type, std::string>> distraction;
@@ -1590,32 +1590,34 @@ action_result do_item_action(npc& guy, const std::string& what, const JsonObject
     return fail(_("That action is not available in co-op yet."));
 }
 
-// Hostiles the character sees within safe mode distance (like the
-// player's safe mode).  `known` are the ones already there when waiting
-// began: like in single player, only new ones interrupt.
-bool hostile_in_view(npc& guy, std::string& what, const std::set<const monster*>* known = nullptr) {
-    const int proximity = get_option<int>("SAFEMODEPROXIMITY");
-    const int range = proximity > 0 ? proximity : 60;
+// Within this distance a hostile interrupts whatever the character does, as
+// it does for the player.
+constexpr int dangerous_proximity = 5;
+
+// Hostiles the character sees that are dangerously close (within
+// dangerous_proximity). Like in single player, distant hostiles do not
+// abort waiting unless they approach or attack.
+auto hostile_in_view(npc& guy, std::string& what) -> bool {
     for (monster& critter : g->all_monsters()) {
-        if (critter.is_dead() || rl_dist(critter.bub_pos(), guy.bub_pos()) > range) { continue; }
-        if (known != nullptr && known->contains(&critter)) { continue; }
+        if (critter.is_dead() || rl_dist(critter.bub_pos(), guy.bub_pos()) > dangerous_proximity) {
+            continue;
+        }
         if (critter.attitude_to(guy) == Attitude::A_HOSTILE && guy.sees(critter)) {
             what = critter.get_name();
             return true;
         }
     }
-    return false;
-}
-
-std::set<const monster*> visible_hostiles(npc& guy) {
-    std::set<const monster*> seen;
-    for (monster& critter : g->all_monsters()) {
-        if (!critter.is_dead() && critter.attitude_to(guy) == Attitude::A_HOSTILE
-            && guy.sees(critter)) {
-            seen.insert(&critter);
+    for (npc& other : g->all_npcs()) {
+        if (&other == &guy || other.is_dead()
+            || rl_dist(other.bub_pos(), guy.bub_pos()) > dangerous_proximity) {
+            continue;
+        }
+        if (other.attitude_to(guy) == Attitude::A_HOSTILE && guy.sees(other)) {
+            what = other.get_name();
+            return true;
         }
     }
-    return seen;
+    return false;
 }
 
 item* wielded_gun(npc& guy) {
@@ -2288,7 +2290,7 @@ action_result execute(peer_t& p, npc& guy, message& m) {
         p.auto_wait_turns = std::clamp(jo.get_int("turns", 1), 1, 24 * 60 * 60);
         p.wait_until = jo.get_string("until", "");
         p.wait_weather = get_weather().weather_id;
-        p.wait_known_hostiles = visible_hostiles(guy);
+        p.wait_hp = guy.get_hp();
         guy.add_msg_if_player(m_info, _("You start waiting."));
         return action_result{};
     }
@@ -2390,10 +2392,6 @@ action_result execute(peer_t& p, npc& guy, message& m) {
     if (a == "armor_layers") { return do_armor_layers(guy, jo); }
     return fail(_("That action is not available in co-op yet."));
 }
-
-// Within this distance a hostile interrupts whatever the character does, as
-// it does for the player.
-constexpr int dangerous_proximity = 5;
 
 // What the game warns the player about while busy: hostiles coming into view
 // or coming close.  Checked once per turn of the character.
@@ -2717,6 +2715,11 @@ bool perform_action(const int peer, const std::string& line) {
     return true;
 }
 
+int auto_wait_turns(const int peer) {
+    const peer_t* p = find_peer(peer);
+    return p != nullptr ? p->auto_wait_turns : 0;
+}
+
 int joined_count() {
     int n = 0;
     for (const auto& [id, p] : peers) { n += p.joined ? 1 : 0; }
@@ -2871,8 +2874,14 @@ bool host_proxy_turn(npc& guy) {
             continue;
         }
         if (p->auto_wait_turns > 0) {
+            if (guy.get_hp() < p->wait_hp) {
+                p->auto_wait_turns = 0;
+                guy.add_msg_if_player(m_bad, _("You stop waiting: you were hurt!"));
+                continue;
+            }
+            p->wait_hp = guy.get_hp();
             std::string what;
-            if (host::hostile_in_view(guy, what, &p->wait_known_hostiles)) {
+            if (host::hostile_in_view(guy, what)) {
                 p->auto_wait_turns = 0;
                 guy.add_msg_if_player(m_warning, _("You stop waiting: you see a %s!"), what);
                 continue;

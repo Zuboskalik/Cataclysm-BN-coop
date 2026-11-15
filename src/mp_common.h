@@ -117,6 +117,7 @@ int joined_count();
 std::vector<std::string> joined_names();
 // Runs an action message of a joined player now, as on their turn.
 bool perform_action( int peer, const std::string &line );
+int auto_wait_turns( int peer );
 void kick_menu();
 std::string status_line();
 } // namespace host
