@@ -890,10 +890,11 @@ void request_fire() {
                 u.primary_weapon().tname());
         return;
     }
-    // Aiming takes the character's turns, like in single player: one turn's
-    // worth of moves here, and if the aim needs more, the turn ends (monsters
-    // act) and the targeting screen comes back on our next turn.
-    constexpr int turn_moves = 100;
+    // Aiming takes the character's turns, like in single player: we give the
+    // targeting UI enough move budget (matching the host's 1000 move clamp)
+    // so any aim level fits in one go without artificial turn delays. The host
+    // then fires with the aim reached and deducts the moves spent.
+    constexpr int turn_moves = 1000;
     if (!pending_aim) {
         pending_aim = aim_activity_actor::use_wielded();
     } else {

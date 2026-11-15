@@ -556,3 +556,47 @@ TEST_CASE("remote player wielding worn holster draws from it", "[coop][holster]"
     cata_mp::host::handle_closed(987, "test over");
     cata_mp::host_end_of_turn();
 }
+
+TEST_CASE("remote player firing applies aim moves and recoil", "[coop][fire]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto name = std::string("ShooterGuy");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(988, "test");
+    cata_mp::host::handle_line(
+        988,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        988,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+
+    npc* guy = nullptr;
+    for (npc& n : g->all_npcs()) {
+        if (n.get_value("coop_player") == name) { guy = &n; }
+    }
+    REQUIRE(guy != nullptr);
+
+    item gun("90two");
+    gun.ammo_set(itype_id("9mm"), 15);
+    guy->wield(gun);
+    REQUIRE(guy->is_armed());
+    REQUIRE(guy->primary_weapon().ammo_remaining() == 15);
+
+    guy->set_moves(100);
+    guy->recoil = 500.0;
+    const tripoint_abs_ms target_abs = bub_to_abs(guy->bub_pos() + tripoint_bub_ms{2, 0, 0});
+
+    cata_mp::host::perform_action(
+        988,
+        string_format(
+            R"({"t":"act","seq":1,"a":"fire","x":%d,"y":%d,"z":%d,"recoil":42.5,"aim_moves":150})",
+            target_abs.x(), target_abs.y(), target_abs.z()));
+
+    CHECK(guy->primary_weapon().ammo_remaining() < 15);
+    // Aim moves (150) + attack cost (moves > 0 prior) deducted, moves should be negative
+    CHECK(guy->get_moves() <= -50);
+
+    cata_mp::host::handle_closed(988, "test over");
+    cata_mp::host_end_of_turn();
+}
