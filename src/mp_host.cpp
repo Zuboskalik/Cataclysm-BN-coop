@@ -1564,6 +1564,12 @@ action_result do_item_action(npc& guy, const std::string& what, const JsonObject
             guy.add_msg_if_player(_("You put away your weapon."));
             return action_result{};
         }
+        if (it->get_use("holster") && !it->contents.empty()) {
+            const int before = guy.get_moves();
+            guy.invoke_item(it, "holster", guy.bub_pos());
+            if (guy.get_moves() == before) { guy.mod_moves(-100); }
+            return action_result{};
+        }
         const ret_val<bool> can = guy.can_wield(*it);
         if (!can.success()) { return fail(can.str()); }
         const std::string name = it->tname();

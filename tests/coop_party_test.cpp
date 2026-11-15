@@ -517,3 +517,42 @@ TEST_CASE("remote player safe mode actions and sync", "[coop][safemode]") {
     cata_mp::host::handle_closed(986, "test over");
     cata_mp::host_end_of_turn();
 }
+
+TEST_CASE("remote player wielding worn holster draws from it", "[coop][holster]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto name = std::string("HolsterGuy");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(987, "test");
+    cata_mp::host::handle_line(
+        987,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        987,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+
+    npc* guy = nullptr;
+    for (npc& n : g->all_npcs()) {
+        if (n.get_value("coop_player") == name) { guy = &n; }
+    }
+    REQUIRE(guy != nullptr);
+
+    item holster("holster");
+    item pistol("90two");
+    holster.put_in(pistol);
+    guy->wear_item(holster);
+    REQUIRE(guy->is_worn(holster));
+
+    cata_mp::host::perform_action(
+        987,
+        string_format(
+            R"({"t":"act","seq":1,"a":"wield","idx":%d,"type":"holster","ord":0,"name":"holster"})",
+            cata_mp::item_index_of(*guy, &guy->worn.front())));
+
+    CHECK(guy->is_wielding(guy->primary_weapon()));
+    CHECK(guy->primary_weapon().typeId() == itype_id("90two"));
+
+    cata_mp::host::handle_closed(987, "test over");
+    cata_mp::host_end_of_turn();
+}

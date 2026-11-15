@@ -1057,16 +1057,19 @@ void uilist::query( bool loop, int timeout )
     if( cata_mp::remote_prompts_active() ) {
         std::vector<std::string> labels;
         std::vector<bool> enabled;
-        for( const uilist_entry &e : entries ) {
-            labels.push_back( e.txt );
-            enabled.push_back( e.enabled );
+        for( size_t i = 0; i < entries.size(); ++i ) {
+            labels.push_back( entries[i].txt );
+            enabled.push_back( entries[i].enabled );
+            if( entries[i].retval == -1 ) {
+                entries[i].retval = static_cast<int>( i );
+            }
         }
         std::string question = title;
         if( !text.empty() ) {
             question += question.empty() ? text : "\n" + text;
         }
         const int pick = cata_mp::remote_choice( question, labels, enabled, allow_cancel );
-        if( pick >= 0 ) {
+        if( pick >= 0 && pick < static_cast<int>( entries.size() ) ) {
             selected = pick;
             ret = entries[pick].retval;
         } else {
