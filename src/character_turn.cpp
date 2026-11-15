@@ -27,6 +27,7 @@
 #include "map/submap.h"
 #include "map_iterator.h"
 #include "morale.h"
+#include "mp_session.h"
 #include "mutation.h"
 #include "overmap/overmapbuffer.h"
 #include "player.h"
@@ -282,7 +283,7 @@ void Character::process_turn()
 
     // NPCs currently don't make any use of their scent, pointless to calculate it
     // TODO: make use of NPC scent.
-    if( !is_npc() ) {
+    if( !is_npc() || cata_mp::is_proxy( *this ) ) {
         if( !has_effect( effect_masked_scent ) ) {
             restore_scent();
         }
@@ -357,7 +358,7 @@ void Character::process_turn()
     }
 
     // Update time spent conscious in this overmap tile for the Nomad traits.
-    if( !is_npc() && ( has_trait( trait_NOMAD ) || has_trait( trait_NOMAD2 ) ||
+    if( ( !is_npc() || cata_mp::is_proxy( *this ) ) && ( has_trait( trait_NOMAD ) || has_trait( trait_NOMAD2 ) ||
                        has_trait( trait_NOMAD3 ) ) &&
         !has_effect( effect_sleep ) && !has_effect( effect_narcosis ) ) {
         const tripoint_abs_omt ompos = abs_omt_pos();
@@ -369,7 +370,7 @@ void Character::process_turn()
         }
     }
     // Decay time spent in other overmap tiles.
-    if( !is_npc() && action_time_scale::once_every_this_tick( 1_hours ) ) {
+    if( ( !is_npc() || cata_mp::is_proxy( *this ) ) && action_time_scale::once_every_this_tick( 1_hours ) ) {
         const tripoint_abs_omt ompos = abs_omt_pos();
         const time_point now = calendar::turn;
         time_duration decay_time = 0_days;
@@ -1264,7 +1265,7 @@ void do_pause( Character &who )
     // on-pause effects for martial arts
     who.martial_arts_data->ma_onpause_effects( who );
 
-    if( who.is_npc() ) {
+    if( who.is_npc() && !cata_mp::is_proxy( who ) ) {
         // The stuff below doesn't apply to NPCs
         // search_surroundings should eventually do, though
         return;

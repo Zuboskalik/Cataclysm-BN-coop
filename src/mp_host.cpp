@@ -1416,7 +1416,9 @@ action_result do_pickup(npc& guy, const tripoint_bub_ms& pos, const JsonArray& l
     if (targets.empty()) { return fail(_("Those items are no longer there.")); }
     int picked = 0;
     for (const auto& [it, count] : targets) {
-        const int qty = it->count_by_charges() ? std::clamp(count, 1, it->charges) : 0;
+        const int qty = it->count_by_charges()
+            ? (count > 0 ? std::clamp(count, 1, it->charges) : it->charges)
+            : 0;
         const units::volume vol =
             it->count_by_charges() ? it->volume() * qty / std::max(1, it->charges) : it->volume();
         const units::mass wgt =
@@ -1445,6 +1447,7 @@ action_result do_pickup(npc& guy, const tripoint_bub_ms& pos, const JsonArray& l
             }
         }
         if (!taken) { continue; }
+        guy.inv_assign_empty_invlet(*taken);
         guy.i_add(std::move(taken));
         guy.add_msg_if_player(_("You pick up %s."), name);
         ++picked;

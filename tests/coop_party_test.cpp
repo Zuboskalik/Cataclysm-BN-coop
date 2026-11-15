@@ -340,3 +340,70 @@ TEST_CASE("remote player can mount a pet creature", "[coop][mount]") {
     cata_mp::host::handle_closed(960, "test over");
     cata_mp::host_end_of_turn();
 }
+
+TEST_CASE("remote player does not drop items on ground when overweight", "[coop][inventory]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto pos = tripoint_bub_ms{60, 60, 0};
+    npc& player2 = spawn_remote_player(pos);
+
+    player2.set_mutation(trait_id("DEBUG_STORAGE"));
+    item anvil("anvil", calendar::turn);
+    player2.i_add(anvil.detach());
+
+    REQUIRE(player2.cached_weight_carried() > player2.weight_capacity());
+
+    player2.drop_invalid_inventory();
+
+    CHECK_FALSE(player2.inv.empty());
+    CHECK(g->m.i_at(pos).empty());
+
+    npc& normal_npc = spawn_npc(pos + tripoint_rel_ms::east(), "test_talker");
+    clear_character(normal_npc);
+    normal_npc.setpos(pos + tripoint_rel_ms::east());
+    normal_npc.set_mutation(trait_id("DEBUG_STORAGE"));
+    item anvil2("anvil", calendar::turn);
+    normal_npc.i_add(anvil2.detach());
+    REQUIRE(normal_npc.cached_weight_carried() > normal_npc.weight_capacity());
+    normal_npc.drop_invalid_inventory();
+    CHECK_FALSE(g->m.i_at(pos + tripoint_rel_ms::east()).empty());
+}
+
+TEST_CASE("remote player pickup charged item without count takes all charges", "[coop][pickup]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto name = std::string("Collector");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(970, "test");
+    cata_mp::host::handle_line(
+        970,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        970,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+    npc* player2 = nullptr;
+    for (npc& guy : g->all_npcs()) {
+        if (guy.get_value("coop_player") == name) { player2 = &guy; }
+    }
+    REQUIRE(player2 != nullptr);
+    const auto pos = tripoint_bub_ms{60, 60, 0};
+    player2->setpos(pos);
+    player2->set_moves(100);
+    player2->set_mutation(trait_id("DEBUG_STORAGE"));
+
+    item ammo("9mm", calendar::turn);
+    ammo.charges = 50;
+    g->m.add_item_or_charges(pos, ammo.detach());
+    REQUIRE(g->m.i_at(pos).size() == 1);
+
+    cata_mp::host::perform_action(
+        970,
+        R"({"a":"pickup","x":60,"y":60,"z":0,"items":[[0,0,"9mm",0]],"seq":1})");
+
+    CHECK(g->m.i_at(pos).empty());
+    CHECK(player2->has_amount(itype_id("9mm"), 50));
+
+    cata_mp::host::handle_closed(970, "test over");
+    cata_mp::host_end_of_turn();
+}

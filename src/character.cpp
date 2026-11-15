@@ -3976,7 +3976,7 @@ void Character::drop_invalid_inventory()
         auto items_to_drop = inv.remove_randomly_by_volume( volume_carried() - volume_capacity() );
         put_into_vehicle_or_drop( *this, item_drop_reason::tumbling, items_to_drop );
     }
-    if( !is_npc() ) {
+    if( !is_npc() || cata_mp::is_proxy( *this ) ) {
         return;
     }
     // Also drop excess weight IF an NPC
@@ -8153,7 +8153,7 @@ float Character::healing_rate( float at_rest_quality ) const
 {
     // TODO: Cache
     float heal_rate;
-    if( !is_npc() ) {
+    if( !is_npc() || cata_mp::is_proxy( *this ) ) {
         heal_rate = get_option< float >( "PLAYER_HEALING_RATE" );
     } else {
         heal_rate = get_option< float >( "NPC_HEALING_RATE" );
@@ -10994,7 +10994,7 @@ void Character::assign_activity( std::unique_ptr<player_activity> act, bool allo
 
     activity->start_or_resume( *this, resuming );
 
-    if( is_npc() ) {
+    if( is_npc() && !cata_mp::is_proxy( *this ) ) {
         cancel_stashed_activity();
         npc *guy = dynamic_cast<npc *>( this );
         guy->current_activity_id = activity->id();
