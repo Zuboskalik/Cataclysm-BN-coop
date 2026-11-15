@@ -17,6 +17,7 @@
 #include "character_stat.h"
 #include "color.h"
 #include "debug.h"
+#include "digital_media.h"
 #include "diary.h"
 #include "effect.h"
 #include "enums.h"
@@ -100,11 +101,12 @@ static const itype_id itype_guidebook( "guidebook" );
 static const trait_id trait_CENOBITE( "CENOBITE" );
 static const trait_id trait_HYPEROPIC( "HYPEROPIC" );
 static const trait_id trait_ILLITERATE( "ILLITERATE" );
-static const trait_id trait_PROF_DICEMASTER( "PROF_DICEMASTER" );
 
 static const morale_type MORALE_FOOD_COLD( "morale_food_cold" );
 static const morale_type MORALE_FOOD_VERY_COLD( "morale_food_very_cold" );
 
+static const enchantment_flag_id
+ench_flag_NO_READING_COMPLEXITY_PENALTY( "NO_READING_COMPLEXITY_PENALTY" );
 class JsonIn;
 class JsonOut;
 
@@ -443,6 +445,11 @@ const Character *avatar::get_book_reader( const item &book,
         return nullptr;
     }
 
+    if( is_digital_file( book ) && !digital_reader_for( *this, book ) ) {
+        reasons.emplace_back( _( "You need to install this file on a powered reader first." ) );
+        return nullptr;
+    }
+
     // Check for conditions that immediately disqualify the player from reading:
     const optional_vpart_position vp = get_map().veh_at( bub_pos() );
     if( vp && vp->vehicle().player_in_control( *this ) ) {
@@ -470,7 +477,8 @@ const Character *avatar::get_book_reader( const item &book,
                !worn_with_flag( flag_FIX_FARSIGHT ) &&
                !has_effect( effect_contacts ) && !has_bionic( bio_eye_optic ) ) {
         reasons.emplace_back( _( "Your eyes won't focus without reading glasses." ) );
-    } else if( !character_funcs::can_see_fine_details( *this ) ) {
+    } else if( ( !is_digital_file( book ) || is_blind() ) &&
+               !character_funcs::can_see_fine_details( *this ) ) {
         // Too dark to read only applies if the player can read to himself
         reasons.emplace_back( _( "It's too dark to read!" ) );
         return nullptr;
@@ -541,11 +549,14 @@ int avatar::time_to_read( const item &book, const Character &reader,
     }
 
     int retval = type->time * reading_speed;
-    retval *= std::min( character_funcs::fine_detail_vision_mod( *this ),
-                        character_funcs::fine_detail_vision_mod( reader ) );
+    if( !is_digital_file( book ) ) {
+        retval *= std::min( character_funcs::fine_detail_vision_mod( *this ),
+                            character_funcs::fine_detail_vision_mod( reader ) );
+    }
 
     const int effective_int = std::min( { get_int(), reader.get_int(), learner ? learner->get_int() : INT_MAX } );
-    if( type->intel > effective_int && !reader.has_trait( trait_PROF_DICEMASTER ) ) {
+    if( type->intel > effective_int &&
+        !reader.has_enchantment_flag( ench_flag_NO_READING_COMPLEXITY_PENALTY ) ) {
         retval += type->time * ( type->intel - effective_int ) * 100;
     }
     return retval;
@@ -798,7 +809,7 @@ bool avatar::read( item *loc, const bool continuous )
                                  character_funcs::fine_detail_vision_mod( *this ),
                                  character_funcs::fine_detail_vision_mod( *reader )
                              );
-    if( vision_mod > character_funcs::FINE_VISION_PERFECT ) {
+    if( !is_digital_file( it ) && vision_mod > character_funcs::FINE_VISION_PERFECT ) {
         add_msg( m_warning,
                  _( "It's difficult for %s to see fine details right now.  Reading will take longer than usual." ),
                  reader->disp_name() );
@@ -806,7 +817,7 @@ bool avatar::read( item *loc, const bool continuous )
 
     const int intelligence = get_int();
     const bool complex_penalty = type->intel > std::min( intelligence, reader->get_int() ) &&
-                                 !reader->has_trait( trait_PROF_DICEMASTER );
+                                 !reader->has_enchantment_flag( ench_flag_NO_READING_COMPLEXITY_PENALTY );
     const auto *complex_player = reader->get_int() < intelligence ? reader : this;
     if( complex_penalty && !continuous ) {
         add_msg( m_warning,
@@ -1622,9 +1633,11 @@ bool avatar::invoke_item( item *used, const tripoint_bub_ms &pt )
     umenu.text = string_format( _( "What to do with your %s?" ), used->tname() );
     umenu.hilight_disabled = true;
 
-    for( const auto &e : use_methods ) {
+    for( int i = 0; i < use_methods.size(); i++ ) {
+        const auto &e = *std::next( use_methods.begin(), i );
+        if( !e.second.activatable() ) { continue; }
         const auto res = e.second.can_call( *this, *used, false, pt );
-        umenu.addentry_desc( MENU_AUTOASSIGN, res.success(), MENU_AUTOASSIGN, e.second.get_name(),
+        umenu.addentry_desc( i, res.success(), MENU_AUTOASSIGN, e.second.get_name(),
                              res.str() );
     }
 

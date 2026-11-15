@@ -9,6 +9,7 @@
 #include "character_functions.h"
 #include "clzones.h"
 #include "color.h"
+#include "cultivated_harvest.h"
 #include "debug.h"
 #include "enums.h"
 #include "game.h"
@@ -72,6 +73,7 @@ static const activity_id ACT_HOTWIRE_CAR("ACT_HOTWIRE_CAR");
 static const activity_id ACT_RELOAD("ACT_RELOAD");
 static const activity_id ACT_START_ENGINES("ACT_START_ENGINES");
 
+static const itype_id fuel_type_animal("animal");
 static const itype_id fuel_type_battery("battery");
 static const itype_id fuel_type_muscle("muscle");
 static const itype_id fuel_type_none("null");
@@ -688,7 +690,9 @@ void vehicle::use_controls(const tripoint_bub_ms& pos, Character* who) {
             actions.emplace_back([&] {
                 if (!confirm_stop_driving()) {
                     return;
-                } else if (engine_on && has_engine_type_not(fuel_type_muscle, true)) {
+                } else if (engine_on && has_engine_type_not(fuel_type_muscle, true)
+                           && has_engine_type_not(fuel_type_animal, true)
+                           && has_engine_type_not(fuel_type_wind, true)) {
                     you.add_msg_if_player(_("You turn the engine off and let go of the controls."));
                     sound_event se;
                     se.origin = pos;
@@ -728,7 +732,9 @@ void vehicle::use_controls(const tripoint_bub_ms& pos, Character* who) {
                 refresh();
             });
 
-        } else if (has_engine_type_not(fuel_type_muscle, true)) {
+        } else if (has_engine_type_not(fuel_type_muscle, true)
+                   && has_engine_type_not(fuel_type_animal, true)
+                   && has_engine_type_not(fuel_type_wind, true)) {
             options.emplace_back(
                 engine_on ? _("Turn off the engine") : _("Turn on the engine"),
                 keybind("TOGGLE_ENGINE"));
@@ -1015,6 +1021,7 @@ auto vehicle::fold_up() -> bool {
     if (can_be_folded) {
         folding_veh_item->set_var("weight", to_milligram(total_mass()));
         folding_veh_item->set_var("volume", total_folded_volume() / units::legacy_volume_factor);
+        folding_veh_item->set_var("vehicle_id", type.str());
         // remove "folded" from name to allow for more flexibility with folded vehicle names. also
         // lowers first character
         folding_veh_item->set_var("name", to_lower_case(name));
@@ -1493,14 +1500,12 @@ void vehicle::operate_reaper() {
             continue;
         }
         g->m.furn_set(reaper_pos, f_null);
-        // Secure the seed type before i_clear destroys the item.
-        const itype& seed_type = *(*seed)->type;
+        auto harvest = get_cultivated_harvest(
+            **seed,
+            {.plant_count = plant_produced, .seed_count = seed_produced, .byproducts = false});
         seed = map_stack::iterator(); // clear the seed iterator to prevent warnings
         g->m.i_clear(reaper_pos);
-        for (auto& i :
-             iexamine::get_harvest_items(seed_type, plant_produced, seed_produced, false)) {
-            g->m.add_item_or_charges(reaper_pos, std::move(i));
-        }
+        for (auto& i : harvest) { g->m.add_item_or_charges(reaper_pos, std::move(i)); }
         sound_event se;
         se.origin = reaper_pos;
         se.volume = rng(50, 80);

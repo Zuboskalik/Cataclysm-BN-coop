@@ -172,6 +172,13 @@
     "harvest": "fungaloid",
     "special_attacks": [ [ "FUNGUS", 30 ] ],
     "death_function": [ "FUNGUS", "NORMAL" ],
+    "petfood": {
+      "food": [ "MYCUSFOOD" ],
+      "feed": "The %s eagerly consumes the fruit.",
+      "pet": "The %s regards you with something like trust.",
+      "tamer_traits": [ [ "THRESH_MYCUS" ] ]
+    },
+    "pet_training": { "hp_mult": 1.15, "melee_mult": 1.15, "dodge_mult": 1.1, "max_level": 3 },
     "flags": [ "STUMBLES", "POISON", "NO_BREATHE", "NOHEAD" ]
   },
   {
@@ -286,6 +293,13 @@
     "harvest": "fungaloid",
     "special_attacks": [ [ "FUNGUS_GROWTH", 10000 ] ],
     "death_function": [ "NORMAL" ],
+    "petfood": {
+      "food": [ "MYCUSFOOD" ],
+      "feed": "The %s gobbles up the fruit.",
+      "pet": "The %s burbles happily at you.",
+      "tamer_traits": [ [ "THRESH_MYCUS" ] ]
+    },
+    "pet_training": { "hp_mult": 1.1, "melee_mult": 1.1, "dodge_mult": 1.1, "max_level": 2 },
     "flags": [ "HEARS", "POISON", "NO_BREATHE", "NOHEAD" ]
   },
   {
@@ -420,8 +434,8 @@
     "diff": 2,
     "volume": "875000 ml",
     "weight": "200 kg",
-    "hp": 300,
-    "speed": 30,
+    "hp": 360,
+    "speed": 33,
     "material": [ "bone" ],
     "symbol": "Z",
     "color": "white",
@@ -429,15 +443,24 @@
     "morale": 100,
     "melee_skill": 5,
     "melee_dice": 3,
-    "melee_dice_sides": 6,
+    "melee_dice_sides": 9,
     "melee_cut": 15,
+    "grab_strength": 4,
     "armor_bash": 20,
     "armor_cut": 45,
     "armor_bullet": 36,
     "vision_day": 5,
     "vision_night": 5,
     "harvest": "mr_bones_heavy",
-    "special_attacks": [ [ "SMASH", 20 ] ],
+    "special_attacks": [
+      [ "GRAB", 10 ],
+      { "type": "bite", "cooldown": 10 },
+      { "id": "smash", "throw_strength": 54 },
+      { "id": "stretch_attack" },
+      { "id": "longswipe" },
+      { "id": "cut_throat" },
+      { "id": "scratch", "damage_max_instance": [ { "damage_type": "cut", "amount": 23, "armor_multiplier": 0.8 } ] }
+    ],
     "death_drops": "mon_zombie_hulk_death_drops",
     "death_function": [ "FUNGUS" ],
     "burn_into": "mon_zombie_fiend",

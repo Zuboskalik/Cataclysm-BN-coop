@@ -5,7 +5,7 @@
     "name": "Evacuee",
     "points": 0,
     "description": "You have survived the initial wave of panic, and have achieved (relative) safety in one of the many government evac shelters.",
-    "allowed_locs": [ "sloc_shelter", "sloc_shelter_vandalized" ],
+    "allowed_locs": [ "sloc_shelter" ],
     "start_name": "Evac Shelter",
     "flags": [ "CITY_START" ]
   },
@@ -43,6 +43,7 @@
       "sloc_marina",
       "sloc_lighthouse_ground",
       "sloc_freshwater_research_station",
+      "sloc_oil_platform",
       "sloc_cabin_lake",
       "sloc_deserted_island"
     ],
@@ -51,6 +52,7 @@
       "prof_pirate_captain",
       "smuggler",
       "castaway",
+      "jetskier",
       "professional_diver",
       "underwater_welder",
       "floatplane_pilot_scenario",
@@ -69,7 +71,7 @@
     "id": "surrounded",
     "name": "Surrounded",
     "points": -2,
-    "description": "You've attracted the attention of living dead in some way, now they're all around and you'll likely have to fight thorough them if you want to escape.",
+    "description": "You've attracted the attention of living dead in some way, now they're all around and you'll likely have to fight through them if you want to escape.",
     "allowed_locs": [
       "sloc_house",
       "sloc_house_boarded",
@@ -114,7 +116,7 @@
       "sloc_hermit_shack",
       "sloc_farm_survivalist",
       "sloc_cabin",
-      "sloc_lmoe",
+      "sloc_lmoe_empty",
       "sloc_horse_ranch",
       "sloc_cabin_lake",
       "sloc_lodge_ground",
@@ -421,7 +423,7 @@
       "afs_bio_dopamine_stimulators",
       "bio_fuel_cell_hydrogen",
       "bio_ground_sonar",
-      "bio_infrared",
+      "bio_night_vision",
       "bio_leukocyte",
       "bio_minirose",
       "bio_painkiller",
@@ -448,6 +450,7 @@
       "bionic_spy",
       "bio_specops",
       "military_saboteur",
+      "marsoc",
       "hacker"
     ],
     "allowed_locs": [ "sloc_lab_random", "sloc_lab_escape_cells", "sloc_lab_finale", "sloc_ice_lab_stairs", "sloc_ice_lab_finale" ],
@@ -469,7 +472,7 @@
     "name": "Challenge - Bordered",
     "points": -2,
     "description": "You have survived the initial wave of panic, and have achieved (relative) safety in one of the many government evac shelters.  The only thing that really bothers you is a mysterious sky-high wall seen in the distance.",
-    "allowed_locs": [ "sloc_shelter", "sloc_shelter_vandalized" ],
+    "allowed_locs": [ "sloc_shelter" ],
     "start_name": "Evac Shelter",
     "flags": [ "CHALLENGE", "CITY_START", "BORDERED" ]
   },
@@ -480,6 +483,8 @@
     "points": -3,
     "description": "It is the winter after zero hour.  As you were scavenging for food and a warm place to stay at, you heard the sound of lots of movement nearby.",
     "allowed_locs": [
+      "sloc_shelter",
+      "sloc_shelter_vandalized",
       "sloc_field",
       "sloc_forest",
       "sloc_swamp",
@@ -520,6 +525,8 @@
     "points": 0,
     "description": "A little over a year has passed since the apocalypse started, and you're about to face your second summer in Hell.",
     "allowed_locs": [
+      "sloc_shelter",
+      "sloc_shelter_vandalized",
       "sloc_field",
       "sloc_forest",
       "sloc_swamp",
@@ -574,6 +581,7 @@
       "lawyer",
       "politician",
       "unemployed",
+      "necropolis_vault_contractor",
       "neighborhood_watch"
     ]
   },
@@ -641,7 +649,7 @@
     "id": "migo_prisoner",
     "name": "Challenge - Mi-Go Camp",
     "points": -8,
-    "description": "You find yourself in the most alien place you've ever seen.  The hot humid air and the organic aspect of the structure makes you feel like you're trapped inside a giant creature.  Whatever it is, you need to get out of here before They find you.",
+    "description": "You find yourself in the most alien place you've ever seen.  The hot humid air and the organic aspect of the structure make you feel like you're trapped inside a giant creature.  Whatever it is, you need to get out of here before They find you.",
     "allowed_locs": [ "sloc_mi-go_camp" ],
     "start_name": "Mi-Go Camp",
     "professions": [ "captive", "migo_escapee", "migo_experiment", "rescuer", "monster_hunter", "escape_team_migo" ],
@@ -726,7 +734,7 @@
       "afs_bio_dopamine_stimulators",
       "bio_fuel_cell_hydrogen",
       "bio_ground_sonar",
-      "bio_infrared",
+      "bio_night_vision",
       "bio_leukocyte",
       "bio_minirose",
       "bio_painkiller",
@@ -786,6 +794,7 @@
       "prof_combat_medic",
       "specops",
       "specops_frogman",
+      "marsoc",
       "power_armor_soldier",
       "lifter_mech_pilot",
       "combat_mech_pilot",
@@ -957,6 +966,7 @@
     "allowed_locs": [ "sloc_military_base_barracks", "sloc_military_base_mess_hall", "sloc_military_base_communications_center" ],
     "professions": [
       "unemployed",
+      "necropolis_vault_contractor",
       "soldier",
       "mil_auto_rifleman",
       "mil_grenadier",
@@ -965,6 +975,7 @@
       "prof_combat_medic",
       "specops",
       "specops_frogman",
+      "marsoc",
       "power_armor_soldier",
       "lifter_mech_pilot",
       "combat_mech_pilot",
@@ -1038,6 +1049,7 @@
       "mil_marksman",
       "specops",
       "specops_frogman",
+      "marsoc",
       "power_armor_soldier",
       "lifter_mech_pilot",
       "combat_mech_pilot",
@@ -1124,7 +1136,9 @@
       "bionic_mentat",
       "bionic_spy",
       "military_saboteur",
-      "hacker"
+      "marsoc",
+      "hacker",
+      "necropolis_vault_contractor"
     ],
     "allowed_locs": [ "sloc_lab_concourse_area" ],
     "bionics": [
@@ -1167,6 +1181,7 @@
       "hacker",
       "bionic_worker",
       "hazmat_unit",
+      "necropolis_vault_contractor",
       "unemployed"
     ],
     "allowed_locs": [ "nuclear_plant" ],

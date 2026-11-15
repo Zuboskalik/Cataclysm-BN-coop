@@ -455,6 +455,96 @@ TEST_CASE("mutable_overmap_placement", "[overmap][slow]") {
     }
 }
 
+TEST_CASE("mutable_placement_rule_connections", "[overmap][mutable_connections]") {
+    const auto special_id = overmap_special_id(
+        GENERATE("test_mutable_disconnected_connection", "test_mutable_directed_connection"));
+    const auto rotation =
+        GENERATE(om_direction::type::north, om_direction::type::east, om_direction::type::south,
+                 om_direction::type::west);
+    REQUIRE(special_id.is_valid());
+    const auto directed = special_id.str() == "test_mutable_directed_connection";
+    auto om = std::make_unique<overmap>(point_abs_om());
+    const auto origin = tripoint_om_omt(90, 90, 0);
+    const auto endpoint = origin + om_direction::rotate(tripoint_rel_omt(3, 0, 0), rotation);
+    const auto road = origin + om_direction::rotate(tripoint_rel_omt(7, 0, 0), rotation);
+    for (auto x = 80; x <= 100; ++x) {
+        for (auto y = 80; y <= 100; ++y) {
+            om->ter_set(tripoint_om_omt(x, y, 0), oter_id("field"));
+        }
+    }
+    auto existing_road = false;
+    SECTION("connect to an existing road") {
+        existing_road = true;
+        om->ter_set(road, oter_id("road_nesw"));
+    }
+    SECTION("without an existing road only directed connections make a stub") {}
+
+    const auto placed = om->place_special(*special_id, origin, rotation, city{}, false, true);
+    REQUIRE(placed.size() == 3);
+    CHECK(om->ter(origin) == oter_id("field"));
+    CHECK(
+        is_ot_match("road", om->ter(endpoint), ot_match_type::type) == (existing_road || directed));
+    if (existing_road) {
+        for (auto offset = 3; offset <= 7; ++offset) {
+            const auto pos =
+                origin + om_direction::rotate(tripoint_rel_omt(offset, 0, 0), rotation);
+            CHECK(is_ot_match("road", om->ter(pos), ot_match_type::type));
+        }
+    }
+}
+
+namespace {
+
+const auto road_start = tripoint_abs_omt(50, 50, 0);
+const auto road_end = tripoint_abs_omt(56, 50, 0);
+const auto extra_pos = tripoint_abs_omt(53, 50, 0);
+
+/// Places an east-west road between two rows of field, seen by the player.
+auto lay_test_road() -> void {
+    auto& omb = ACTIVE_OVERMAP_BUFFER;
+    for (const auto x : std::views::iota(50, 57)) {
+        for (const auto y : std::views::iota(49, 52)) {
+            const auto p = tripoint_abs_omt(x, y, 0);
+            omb.ter_set(p, oter_id(y == 50 ? "road_ew" : "field"));
+            omb.set_seen(p);
+        }
+    }
+    omb.add_extra(extra_pos, string_id<map_extra>("mx_test_path_cost"));
+}
+
+auto crosses_extra(const std::vector<tripoint_abs_omt>& path) -> bool {
+    return std::ranges::find(path, extra_pos) != path.end();
+}
+
+} // namespace
+
+TEST_CASE("travel_path_prices_map_extras", "[overmap][travel_path]") {
+    clear_all_state();
+    lay_test_road();
+    auto& omb = ACTIVE_OVERMAP_BUFFER;
+    const auto vehicle = overmap_path_params::for_land_vehicle(1.0f, false, false);
+
+    SECTION("a vehicle drives around a costly extra") {
+        const auto path = omb.get_travel_path(road_start, road_end, vehicle);
+        REQUIRE(!path.empty());
+        CHECK(!crosses_extra(path));
+    }
+    SECTION("a walker never enters an impassable extra") {
+        const auto path =
+            omb.get_travel_path(road_start, road_end, overmap_path_params::for_player());
+        REQUIRE(!path.empty());
+        CHECK(!crosses_extra(path));
+    }
+    SECTION("the destination is exempt from its extra's cost") {
+        CHECK(
+            !omb.get_travel_path(road_start, extra_pos, overmap_path_params::for_player()).empty());
+    }
+    SECTION("without the extra, a vehicle stays on the road") {
+        omb.delete_extra(extra_pos);
+        CHECK(crosses_extra(omb.get_travel_path(road_start, road_end, vehicle)));
+    }
+}
+
 #if defined(TILES)
 
 // Regression tests for issue #9688: the main view and the (possibly shared) overmap

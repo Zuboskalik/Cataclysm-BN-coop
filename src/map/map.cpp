@@ -143,6 +143,7 @@ static const ammo_effect_str_id ammo_effect_LASER("LASER");
 static const ammo_effect_str_id ammo_effect_LIGHTNING("LIGHTNING");
 static const ammo_effect_str_id ammo_effect_NO_PENETRATE_OBSTACLES("NO_PENETRATE_OBSTACLES");
 static const ammo_effect_str_id ammo_effect_PLASMA("PLASMA");
+static const ammo_effect_str_id ammo_effect_SHOT("SHOT");
 
 static const itype_id itype_autoclave("autoclave");
 static const itype_id itype_battery("battery");
@@ -463,6 +464,8 @@ auto map::resize(int new_mapsize) -> void {
 auto map::bind_dimension(const dimension_id& dim) -> void {
     const auto changed = bound_dimension_ != dim;
     bound_dimension_ = dim;
+    // Cached buffer needs to be cleared as it is bound on a per-dimension basis
+    bound_buffer_ = nullptr;
     refresh_active_submap_view();
     if (changed) {
         // Cached vehicle pointers belong to the old buffer, which may now be unloaded.
@@ -484,6 +487,7 @@ auto map::refresh_active_submap_view() -> void {
 }
 
 auto map::update_active_load_region(const point_abs_sm& begin, const point_abs_sm& end) -> void {
+    bound_buffer_ = nullptr;
     if (!active_load_region_) {
         active_load_region_ = mapbuffer_load_region({
             .buffer = get_mapbuffer(),
@@ -496,7 +500,10 @@ auto map::update_active_load_region(const point_abs_sm& begin, const point_abs_s
     active_load_region_.update(begin, end);
 }
 
-auto map::release_active_load_region() -> void { active_load_region_.release(); }
+auto map::release_active_load_region() -> void {
+    bound_buffer_ = nullptr;
+    active_load_region_.release();
+}
 
 auto map::validate_active_submap_view_complete(const char* context) const -> void {
     if (active_submaps_.is_complete()) { return; }
@@ -2627,6 +2634,11 @@ auto map::move_cost(const tripoint_bub_ms& p, const vehicle* ignored_vehicle) co
     if (get_mapbuffer().is_outside_pocket_dimension_bounds(map_local_to_abs(*this, p))) {
         return 0;
     }
+    if (std::ranges::any_of(field_at(p), [](const auto& entry) {
+            return entry.second.is_impassable();
+        })) {
+        return 0;
+    }
 
     const furn_t& furniture = furn(p).obj();
     const ter_t& terrain = ter(p).obj();
@@ -4422,10 +4434,13 @@ void map::shoot(
 
     double range = rl_dist(origin, p);
     const bool point_blank = range <= 1;
+    // Point-blank shots to terrain count as a crit, also increase damage for shotshells
+    // 5x since base damage is typically divided into 5 projectiles, times 1.5 comes out to 7.5
+    const float breaching_mod = proj.has_effect(ammo_effect_SHOT) ? 7.5 : 1.5;
     if (furn.bash.ranged) {
         // Damage cover like a crit if we're breaching at point blank range, otherwise randomize
         // like a normal hit.
-        float destroy_roll = point_blank ? dam * 1.5 : dam * rng_float(0.9, 1.1);
+        float destroy_roll = point_blank ? dam * breaching_mod : dam * rng_float(0.9, 1.1);
         const ranged_bash_info& rfi = *furn.bash.ranged;
         if (!hit_items
             && (!check(rfi.block_unaimed_chance)
@@ -4475,7 +4490,7 @@ void map::shoot(
         float modified_dam = dam;
         float modified_pen = pen;
         // Separate hit roll since damage might have been lowered by furniture first.
-        float destroy_roll = point_blank ? dam * 1.5 : dam * rng_float(0.9, 1.1);
+        float destroy_roll = point_blank ? dam * breaching_mod : dam * rng_float(0.9, 1.1);
         const ranged_bash_info& ri = *ter.bash.ranged;
         if (!hit_items
             && (!check(ri.block_unaimed_chance)
@@ -5614,7 +5629,7 @@ void map::process_items_in_vehicles(submap& current_submap, int turns) {
 }
 
 void map::process_items_in_vehicle(vehicle& cur_veh, submap& current_submap, int turns) {
-    const bool engine_heater_is_on = cur_veh.has_part("E_HEATER", true) && cur_veh.engine_on;
+    const auto engine_heater_is_on = rot::temp::engine_heater_is_on(cur_veh);
     for (const vpart_reference& vp : cur_veh.get_any_parts(VPFLAG_FLUIDTANK)) {
         vp.part().process_contents(vp.pos(), engine_heater_is_on);
     }
@@ -5672,6 +5687,7 @@ void map::process_items_in_vehicle(vehicle& cur_veh, submap& current_submap, int
 // Note: this is called quite a lot when drawing tiles
 // Console build has the most expensive parts optimized out
 auto map::sees_some_items(const tripoint_bub_ms& p, const Creature& who) const -> bool {
+    ZoneScoped;
     // Can only see items if there are any items.
     return has_items(p) && could_see_items(p, who.bub_pos());
 }
@@ -5702,11 +5718,8 @@ auto map::could_see_items(const tripoint_bub_ms& p, const tripoint_bub_ms& from)
 }
 
 auto map::has_items(const tripoint_bub_ms& p) const -> bool {
-    point_sm_ms l;
-    submap* const current_submap = get_submap_at(tripoint_bub_ms(p), l);
-    if (current_submap == nullptr) { return false; }
-
-    return !current_submap->get_items(l).empty();
+    const std::optional<mapbuffer_abs_tile_view> tile = get_tile_view_at(p);
+    return tile ? !tile->get_items().empty() : false;
 }
 
 template <typename Stack>
@@ -6622,8 +6635,11 @@ void map::drawsq(
 
 // a check to see if the lower floor needs to be rendered in tiles
 auto map::dont_draw_lower_floor(const tripoint_bub_ms& p) -> bool {
-    return p.z() <= -OVERMAP_DEPTH
-        || !(has_flag(TFLAG_NO_FLOOR, p) || has_flag(TFLAG_Z_TRANSPARENT, p));
+    ZoneScoped;
+    if (p.z() <= -OVERMAP_DEPTH) { return true; }
+    std::optional<mapbuffer_abs_tile_view> tile = get_tile_view_at(p);
+    if (!tile) { return true; }
+    return !(tile->has_flag(TFLAG_NO_FLOOR) || tile->has_flag(TFLAG_Z_TRANSPARENT));
 }
 
 auto map::draw_maptile(
@@ -8984,6 +9000,7 @@ void map::build_map_cache(const int zlev, bool skip_lightmap) {
 }
 
 auto map::get_submap_at(const tripoint_bub_ms& p) const -> submap* {
+    ZoneScoped;
     if (inbounds(p)) {
         const auto abs_sm_pos =
             map_local_to_abs(*this, tripoint_bub_sm(p.x() / SEEX, p.y() / SEEY, p.z()));
@@ -9002,12 +9019,32 @@ auto map::get_submap_at(const tripoint_bub_ms& p) const -> submap* {
 }
 
 auto map::get_submap_at(const tripoint_bub_ms& p, point_sm_ms& offset_p) const -> submap* {
+    ZoneScopedN("get_submap_at_2param");
     // Use floor-division so that negative local coords (out-of-bubble) give the
     // correct submap-local offset in [0, SEEX) rather than a negative value.
     const int smx = divide_round_to_minus_infinity(p.x(), SEEX);
     const int smy = divide_round_to_minus_infinity(p.y(), SEEY);
     offset_p = point_sm_ms(point(p.x() - smx * SEEX, p.y() - smy * SEEY));
     return get_submap_at(tripoint_bub_ms(p));
+}
+
+auto map::get_submap_view_at(const tripoint_bub_ms& p, point_sm_ms& offset_p) const
+    -> std::optional<mapbuffer_abs_submap_view> {
+    ZoneScoped;
+    // Use floor-division so that negative local coords (out-of-bubble) give the
+    // correct submap-local offset in [0, SEEX) rather than a negative value.
+    tripoint_bub_sm sm;
+    std::tie(sm, offset_p) = project_remain<coords::sm>(p);
+    return active_submap_view(map_local_to_abs(*this, sm));
+}
+
+auto map::get_tile_view_at(const tripoint_bub_ms& p) const
+    -> std::optional<mapbuffer_abs_tile_view> {
+    ZoneScoped;
+    point_sm_ms l;
+    std::optional<mapbuffer_abs_submap_view> submap = get_submap_view_at(p, l);
+    if (!submap) { return std::nullopt; }
+    return submap->tile(l);
 }
 
 void map::draw_line_ter(const ter_id& type, const tripoint_bub_ms& p1, const tripoint_bub_ms& p2) {

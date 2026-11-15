@@ -11,6 +11,8 @@
 #include "game_constants.h"
 #include "line.h"
 #include "map/map.h"
+#include "map/mapdata.h"
+#include "map_memory.h"
 #include "monster.h"
 #include "mtype.h"
 #include "options.h"
@@ -42,6 +44,17 @@
 
 namespace
 {
+
+auto has_memorized_terrain_at( avatar &you, map &/*here*/, const tripoint_bub_ms &target ) -> bool
+{
+    if( !you.should_show_map_memory() ) {
+        return false;
+    }
+
+    const auto abs_target = bub_to_abs( target );
+    return ter_str_id( you.get_terrain_tile( abs_target ).tile ).is_valid() ||
+           ter_str_id( you.get_memorized_tile( abs_target ).tile ).is_valid();
+}
 
 class basic_animation
 {
@@ -874,7 +887,8 @@ void draw_line_curses( game &g, const tripoint_bub_ms &center,
 void game::draw_line( const tripoint_bub_ms &p, const tripoint_bub_ms &center,
                       const std::vector<tripoint_bub_ms> &points, bool noreveal )
 {
-    if( !noreveal && !avatar_knows_travel_destination( u, p ) ) {
+    if( !noreveal && !avatar_knows_travel_destination( u, p ) &&
+        !has_memorized_terrain_at( u, get_map(), p ) ) {
         return;
     }
 
@@ -889,7 +903,8 @@ void game::draw_line( const tripoint_bub_ms &p, const tripoint_bub_ms &center,
 void game::draw_line( const tripoint_bub_ms &p, const tripoint_bub_ms &center,
                       const std::vector<tripoint_bub_ms> &points, bool noreveal )
 {
-    if( !noreveal && !avatar_knows_travel_destination( u, p ) ) {
+    if( !noreveal && !avatar_knows_travel_destination( u, p ) &&
+        !has_memorized_terrain_at( u, get_map(), p ) ) {
         return;
     }
 
