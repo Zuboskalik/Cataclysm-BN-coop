@@ -13,6 +13,7 @@
 #include "json.h"
 
 class Character;
+class input_context;
 class item;
 
 namespace cata_mp
@@ -119,6 +120,8 @@ std::vector<std::string> joined_names();
 bool perform_action( int peer, const std::string &line );
 int auto_wait_turns( int peer );
 auto peer_safe_mode( int peer ) -> bool;
+auto register_waiting_actions( input_context &ctxt ) -> void;
+auto handle_waiting_zoom( const std::string &action ) -> bool;
 void kick_menu();
 std::string status_line();
 } // namespace host

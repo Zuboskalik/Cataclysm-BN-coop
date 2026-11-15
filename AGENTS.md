@@ -74,6 +74,7 @@ auto print_button( const catacurses::window &w, const button_options &opts ) -> 
    BN item tests use owned `item::spawn()` values and `map_stack::only_item()`, not DDA item-pocket APIs. Co-op action JSON uses absolute map coordinates.
    Co-op movement tests verify the requested tile and hazard damage; player-controlled proxies must not use NPC-only hazard avoidance.
    Co-op body-temperature tests run the host turn path, not `update_bodytemp()` directly, so missing simulation calls are detected.
+   Co-op wait-loop UI tests use portable `input_to_action()` and check dispatch, rendered scale, and unchanged turn/moves; registration getters are Android-only.
 5. Commit atomically with [Conventional Commits](./docs/en/contribute/changelog_guidelines.md); no body/footer unless critical.
 6. PR: [template](./.github/pull_request_template.md), no fluff, **SHOULD** use ASD-STE100 Simplified Technical English. `git push && gh pr create --web --fill`. Track `gh pr checks` until done; fix branch-owned failures, rerun or report transient ones with the failing job.
 

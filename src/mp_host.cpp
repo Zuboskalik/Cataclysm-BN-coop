@@ -112,6 +112,27 @@ struct mp_game_access {
 
 namespace cata_mp::host {
 
+auto register_waiting_actions(input_context& ctxt) -> void {
+    ctxt.register_action(action_ident(ACTION_COOP_PLAYERS));
+    for (const auto act :
+         {ACTION_INVENTORY, ACTION_LOOK, ACTION_MAP, ACTION_MESSAGES, ACTION_PL_INFO,
+          ACTION_COOP_CHAT, ACTION_PAUSE, ACTION_ZOOM_IN, ACTION_ZOOM_OUT}) {
+        ctxt.register_action(action_ident(act));
+    }
+}
+
+auto handle_waiting_zoom(const std::string& action) -> bool {
+    if (action == action_ident(ACTION_ZOOM_IN)) {
+        g->zoom_in();
+    } else if (action == action_ident(ACTION_ZOOM_OUT)) {
+        g->zoom_out();
+    } else {
+        return false;
+    }
+    g->mark_main_ui_adaptor_resize();
+    return true;
+}
+
 namespace {
 
 constexpr int near_scan_radius = 2;     // submaps around each player, every broadcast
@@ -2479,12 +2500,7 @@ bool wait_for_action(int peer_id) {
     // The usual keys: F2 for options, and screens that take no time
     // (inventory, look around, map...) while the other player thinks.
     input_context ctxt("DEFAULTMODE");
-    ctxt.register_action(action_ident(ACTION_COOP_PLAYERS));
-    for (const action_id act :
-         {ACTION_INVENTORY, ACTION_LOOK, ACTION_MAP, ACTION_MESSAGES, ACTION_PL_INFO,
-          ACTION_COOP_CHAT, ACTION_PAUSE}) {
-        ctxt.register_action(action_ident(act));
-    }
+    register_waiting_actions(ctxt);
     while (true) {
         pump();
         peer_t* p = find_peer(peer_id);
@@ -2509,6 +2525,7 @@ bool wait_for_action(int peer_id) {
         refresh_display();
         ctxt.set_timeout(40);
         const std::string action = ctxt.handle_input();
+        if (handle_waiting_zoom(action)) { continue; }
         // The host's own waiting or long action stops on the pause key, as in
         // single player (the other player's turns keep it running otherwise).
         if (action == action_ident(ACTION_PAUSE)) {

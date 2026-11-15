@@ -9,6 +9,7 @@
 #include "event.h"
 #include "event_bus.h"
 #include "game.h"
+#include "input.h"
 #include "item.h"
 #include "json.h"
 #include "kill_tracker.h"
@@ -30,6 +31,12 @@
 
 #include <sstream>
 #include <utility>
+
+#if defined(TILES)
+#    include "cata_tiles.h"
+#    include "sdltiles.h"
+#    include "tile_helpers.h"
+#endif
 
 // Co-op: the other players share the avatar's missions and reputation.  On
 // the host a remote player is an NPC marked as a proxy.
@@ -304,6 +311,60 @@ TEST_CASE("player-controlled NPCs obey movement into fire", "[coop][movement][fi
         CHECK(guy.get_hp() == hp_before);
     }
 }
+
+#if defined(TILES)
+TEST_CASE("host waiting input changes zoom without advancing time", "[coop][zoom][tiles]") {
+    clear_all_state();
+    const auto cleanup = on_out_of_scope([]() { clear_all_state(); });
+    const auto hosting = hosting_scope{};
+    const auto zoom_steps = override_option("ZOOM_STEP_COUNT", "1");
+    const auto fixture = tile_context_fixture(true);
+    REQUIRE(fixture.valid());
+    g->reset_zoom();
+    const auto initial_zoom = g->get_zoom();
+    const auto initial_width = tilecontext->get_tile_width();
+    REQUIRE(initial_width > 0);
+    const auto turn = calendar::turn;
+    const auto moves = get_avatar().get_moves();
+    auto context = input_context("DEFAULTMODE");
+    cata_mp::host::register_waiting_actions(context);
+    const auto zoom_in_action = context.input_to_action(input_event('z', input_event_t::keyboard));
+    const auto zoom_out_action = context.input_to_action(input_event('Z', input_event_t::keyboard));
+    REQUIRE(zoom_in_action == action_ident(ACTION_ZOOM_IN));
+    REQUIRE(zoom_out_action == action_ident(ACTION_ZOOM_OUT));
+
+    SECTION("z increases the rendered scale") {
+        REQUIRE(cata_mp::host::handle_waiting_zoom(zoom_in_action));
+        CHECK(g->get_zoom() == 32.f);
+        CHECK(tilecontext->get_tile_width() > initial_width);
+    }
+
+    SECTION("Z decreases the rendered scale") {
+        REQUIRE(cata_mp::host::handle_waiting_zoom(zoom_out_action));
+        CHECK(g->get_zoom() == 8.f);
+        CHECK(tilecontext->get_tile_width() < initial_width);
+    }
+
+    SECTION("zoom wraps at both limits") {
+        g->set_zoom(64.f);
+        REQUIRE(cata_mp::host::handle_waiting_zoom(action_ident(ACTION_ZOOM_IN)));
+        CHECK(g->get_zoom() == 4.f);
+        CHECK(tilecontext->get_tile_width() > 0);
+        REQUIRE(cata_mp::host::handle_waiting_zoom(action_ident(ACTION_ZOOM_OUT)));
+        CHECK(g->get_zoom() == 64.f);
+        CHECK(tilecontext->get_tile_width() > initial_width);
+    }
+
+    SECTION("other waiting actions are not consumed by zoom handling") {
+        CHECK_FALSE(cata_mp::host::handle_waiting_zoom(action_ident(ACTION_PAUSE)));
+        CHECK(g->get_zoom() == initial_zoom);
+        CHECK(tilecontext->get_tile_width() == initial_width);
+    }
+
+    CHECK(calendar::turn == turn);
+    CHECK(get_avatar().get_moves() == moves);
+}
+#endif
 
 TEST_CASE("remote player body temperature follows their environment", "[coop][bodytemp]") {
     clear_all_state();
