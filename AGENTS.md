@@ -71,6 +71,7 @@ auto print_button( const catacurses::window &w, const button_options &opts ) -> 
    deno task docs:gen  # when lua_annotations.lua or docs/en/mod/lua/reference/lua.md conflict
    ```
    UI regression tests follow the production refresh path; do not prepare layout or paging manually.
+   BN item tests use owned `item::spawn()` values and `map_stack::only_item()`, not DDA item-pocket APIs. Co-op action JSON uses absolute map coordinates.
 5. Commit atomically with [Conventional Commits](./docs/en/contribute/changelog_guidelines.md); no body/footer unless critical.
 6. PR: [template](./.github/pull_request_template.md), no fluff, **SHOULD** use ASD-STE100 Simplified Technical English. `git push && gh pr create --web --fill`. Track `gh pr checks` until done; fix branch-owned failures, rerun or report transient ones with the failing job.
 

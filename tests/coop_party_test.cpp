@@ -2,10 +2,14 @@
 #include "avatar.h"
 #include "avatar_action.h"
 #include "bodypart.h"
+#include "calendar.h"
+#include "cata_utility.h"
 #include "catch/catch.hpp"
+#include "character_functions.h"
 #include "event.h"
 #include "event_bus.h"
 #include "game.h"
+#include "item.h"
 #include "json.h"
 #include "kill_tracker.h"
 #include "line.h"
@@ -16,10 +20,13 @@
 #include "mp_common.h"
 #include "mp_session.h"
 #include "npc.h"
+#include "player_activity.h"
 #include "player_helpers.h"
 #include "state_helpers.h"
+#include "units.h"
 
 #include <sstream>
+#include <utility>
 
 // Co-op: the other players share the avatar's missions and reputation.  On
 // the host a remote player is an NPC marked as a proxy.
@@ -283,21 +290,22 @@ TEST_CASE("remote player drinks water from a canteen on the ground", "[coop][eat
     const auto ground_pos = pos + tripoint_rel_ms::east();
     get_map().i_clear(ground_pos);
 
-    auto canteen = item("canteen");
-    canteen.put_in(item("water_clean", calendar::turn, 2), item_pocket::pocket_type::CONTAINER);
-    get_map().add_item_or_charges(ground_pos, canteen);
+    auto canteen = item::spawn("canteen");
+    canteen->put_in(item::spawn("water_clean", calendar::turn, 2));
+    get_map().add_item_or_charges(ground_pos, std::move(canteen));
 
+    const auto ground_abs = bub_to_abs(ground_pos);
     const auto act_json = string_format(
         R"({"t":"act","seq":1,"a":"eat","x":%d,"y":%d,"z":%d,"gidx":0,"type":"canteen","ord":0})",
-        ground_pos.x(), ground_pos.y(), ground_pos.z());
+        ground_abs.x(), ground_abs.y(), ground_abs.z());
 
     REQUIRE(cata_mp::host::perform_action(950, act_json));
     CHECK(drinker->get_thirst() < 100);
 
-    const auto items_on_ground = get_map().i_at(ground_pos);
-    REQUIRE(!items_on_ground.empty());
-    CHECK(items_on_ground.front()->typeId() == itype_id("canteen"));
-    CHECK(!items_on_ground.front()->is_container_empty());
+    auto items_on_ground = get_map().i_at(ground_pos);
+    REQUIRE(items_on_ground.size() == 1);
+    CHECK(items_on_ground.only_item().typeId() == itype_id("canteen"));
+    CHECK_FALSE(items_on_ground.only_item().is_container_empty());
 
     cata_mp::host::handle_closed(950, "test over");
     cata_mp::host_end_of_turn();
@@ -329,10 +337,11 @@ TEST_CASE("remote player can mount a pet creature", "[coop][mount]") {
     monster& horse = spawn_test_monster("mon_horse", horse_pos);
     horse.friendly = -1;
     horse.add_effect(efftype_id("pet"), 1_days);
-    horse.add_effect(efftype_id("saddled"), 1_days);
+    horse.add_effect(efftype_id("monster_saddled"), 1_days);
+    rider->set_skill_level(skill_id("survival"), 1);
 
     const auto status = rider->get_mountable_status(horse);
-    CHECK(status.can_mount());
+    REQUIRE(status.can_mount());
 
     rider->mount_creature(horse);
     CHECK(rider->is_mounted());
@@ -346,25 +355,27 @@ TEST_CASE("remote player does not drop items on ground when overweight", "[coop]
     clear_all_state();
     const auto hosting = hosting_scope{};
     const auto pos = tripoint_bub_ms{60, 60, 0};
+    npc& normal_npc = spawn_npc(pos + tripoint_rel_ms::east(), "test_talker");
+    clear_character(normal_npc, false);
+    normal_npc.setpos(pos + tripoint_rel_ms::east());
+    REQUIRE_FALSE(normal_npc.wear_item(item::spawn("test_backpack")));
     npc& player2 = spawn_remote_player(pos);
 
-    player2.set_mutation(trait_id("DEBUG_STORAGE"));
-    item anvil("anvil", calendar::turn);
-    player2.i_add(anvil.detach());
+    clear_character(player2, false);
+    REQUIRE_FALSE(player2.wear_item(item::spawn("test_backpack")));
+    const auto load = static_cast<int>(units::to_gram(player2.weight_capacity())) + 1000;
+    player2.i_add(item::spawn("test_platinum_bit", calendar::turn, load));
 
+    REQUIRE(player2.volume_carried() <= player2.volume_capacity());
     REQUIRE(player2.cached_weight_carried() > player2.weight_capacity());
 
     player2.drop_invalid_inventory();
 
-    CHECK_FALSE(player2.inv.empty());
+    CHECK(player2.has_charges(itype_id("test_platinum_bit"), load));
     CHECK(g->m.i_at(pos).empty());
 
-    npc& normal_npc = spawn_npc(pos + tripoint_rel_ms::east(), "test_talker");
-    clear_character(normal_npc);
-    normal_npc.setpos(pos + tripoint_rel_ms::east());
-    normal_npc.set_mutation(trait_id("DEBUG_STORAGE"));
-    item anvil2("anvil", calendar::turn);
-    normal_npc.i_add(anvil2.detach());
+    normal_npc.i_add(item::spawn("test_platinum_bit", calendar::turn, load));
+    REQUIRE(normal_npc.volume_carried() <= normal_npc.volume_capacity());
     REQUIRE(normal_npc.cached_weight_carried() > normal_npc.weight_capacity());
     normal_npc.drop_invalid_inventory();
     CHECK_FALSE(g->m.i_at(pos + tripoint_rel_ms::east()).empty());
@@ -393,17 +404,18 @@ TEST_CASE("remote player pickup charged item without count takes all charges", "
     player2->set_moves(100);
     player2->set_mutation(trait_id("DEBUG_STORAGE"));
 
-    item ammo("9mm", calendar::turn);
-    ammo.charges = 50;
-    g->m.add_item_or_charges(pos, ammo.detach());
+    g->m.add_item_or_charges(pos, item::spawn("9mm", calendar::turn, 50));
     REQUIRE(g->m.i_at(pos).size() == 1);
 
-    cata_mp::host::perform_action(
+    const auto absolute_pos = bub_to_abs(pos);
+    REQUIRE(cata_mp::host::perform_action(
         970,
-        R"({"a":"pickup","x":60,"y":60,"z":0,"items":[[0,0,"9mm",0]],"seq":1})");
+        string_format(
+            R"({"t":"act","a":"pickup","x":%d,"y":%d,"z":%d,"items":[[0,0,"9mm",0]],"seq":1})",
+            absolute_pos.x(), absolute_pos.y(), absolute_pos.z())));
 
     CHECK(g->m.i_at(pos).empty());
-    CHECK(player2->has_amount(itype_id("9mm"), 50));
+    CHECK(player2->has_charges(itype_id("9mm"), 50));
 
     cata_mp::host::handle_closed(970, "test over");
     cata_mp::host_end_of_turn();
@@ -429,9 +441,7 @@ TEST_CASE("remote player is not included in crafting or study helpers", "[coop][
 
     const auto helpers_with_npc = character_funcs::get_crafting_helpers(get_avatar());
     CHECK(helpers_with_npc.size() == 1);
-    if (!helpers_with_npc.empty()) {
-        CHECK(helpers_with_npc.front()->getID() == follower.getID());
-    }
+    if (!helpers_with_npc.empty()) { CHECK(helpers_with_npc.front()->getID() == follower.getID()); }
 }
 
 TEST_CASE("remote player waiting is not interrupted by distant hostiles", "[coop][wait]") {
@@ -538,23 +548,59 @@ TEST_CASE("remote player wielding worn holster draws from it", "[coop][holster]"
     }
     REQUIRE(guy != nullptr);
 
-    item holster("holster");
-    item pistol("90two");
-    holster.put_in(pistol);
-    guy->wear_item(holster);
-    REQUIRE(guy->is_worn(holster));
+    auto holster = item::spawn("holster");
+    holster->put_in(item::spawn("90two"));
+    const auto worn_holster = holster.get();
+    REQUIRE_FALSE(guy->wear_item(std::move(holster)));
+    REQUIRE(guy->is_worn(*worn_holster));
 
     cata_mp::host::perform_action(
         987,
         string_format(
             R"({"t":"act","seq":1,"a":"wield","idx":%d,"type":"holster","ord":0,"name":"holster"})",
-            cata_mp::item_index_of(*guy, &guy->worn.front())));
+            cata_mp::item_index_of(*guy, worn_holster)));
 
     CHECK(guy->is_wielding(guy->primary_weapon()));
     CHECK(guy->primary_weapon().typeId() == itype_id("90two"));
 
     cata_mp::host::handle_closed(987, "test over");
     cata_mp::host_end_of_turn();
+}
+
+TEST_CASE("host drop snapshot clears its weapon within the same turn", "[coop][drop][sync]") {
+    clear_all_state();
+    const auto cleanup = on_out_of_scope([]() { clear_all_state(); });
+    const auto hosting = hosting_scope{};
+    auto& host = get_avatar();
+    auto& weapon = host.i_add(item::spawn("test_normal_sword"));
+    REQUIRE(host.wield(weapon));
+    host.set_moves(1000);
+    const auto turn = calendar::turn;
+
+    const auto snapshot = [&host]() {
+        return cata_mp::write_json([&host](JsonOut& jsout) { host.serialize(jsout); });
+    };
+    const auto read_snapshot = [](const std::string& state) {
+        auto mirror = npc();
+        auto stream = std::istringstream(state);
+        auto input = JsonIn(stream);
+        mirror.deserialize(input);
+        return mirror.is_armed();
+    };
+    REQUIRE(read_snapshot(snapshot()));
+
+    host.drop(host.primary_weapon(), host.bub_pos());
+    REQUIRE(host.activity);
+    REQUIRE(*host.activity);
+    REQUIRE(host.is_armed());
+    host.activity->do_turn(host);
+
+    REQUIRE_FALSE(host.is_armed());
+    CHECK(host.get_moves() > 0);
+    CHECK(calendar::turn == turn);
+    CHECK_FALSE(read_snapshot(snapshot()));
+    REQUIRE(get_map().i_at(host.bub_pos()).size() == 1);
+    CHECK(get_map().i_at(host.bub_pos()).only_item().typeId() == itype_id("test_normal_sword"));
 }
 
 TEST_CASE("remote player firing applies aim moves and recoil", "[coop][fire]") {
@@ -577,7 +623,7 @@ TEST_CASE("remote player firing applies aim moves and recoil", "[coop][fire]") {
     }
     REQUIRE(guy != nullptr);
 
-    item gun("90two");
+    auto& gun = guy->i_add(item::spawn("90two"));
     gun.ammo_set(itype_id("9mm"), 15);
     guy->wield(gun);
     REQUIRE(guy->is_armed());
@@ -585,7 +631,7 @@ TEST_CASE("remote player firing applies aim moves and recoil", "[coop][fire]") {
 
     guy->set_moves(100);
     guy->recoil = 500.0;
-    const tripoint_abs_ms target_abs = bub_to_abs(guy->bub_pos() + tripoint_bub_ms{2, 0, 0});
+    const auto target_abs = bub_to_abs(guy->bub_pos() + tripoint_rel_ms{2, 0, 0});
 
     cata_mp::host::perform_action(
         988,

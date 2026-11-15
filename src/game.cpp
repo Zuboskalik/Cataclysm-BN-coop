@@ -2618,7 +2618,7 @@ void game::process_voluntary_act_interrupt()
 void game::process_activity()
 {
     ZoneScoped;
-    if( !u.activity ) {
+    if( !u.activity || !*u.activity ) {
         return;
     }
 
@@ -2642,6 +2642,11 @@ void game::process_activity()
         if( activity_finished || activity_changed || activity_progressed ) {
             restore_debug_infinite_speed_moves( before_avatar_moves );
         }
+    }
+
+    if( u.moves > 0 ) {
+        // Completed activities must reach clients before the host waits for input again.
+        cata_mp::host_after_player_action();
     }
 }
 
