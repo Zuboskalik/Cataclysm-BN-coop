@@ -42,6 +42,7 @@
 #include "messages.h"
 #include "mission.h"
 #include "monster.h"
+#include "mp_session.h"
 #include "mtype.h"
 #include "npc.h" // IWYU pragma: associated
 #include "npc_class.h"
@@ -2719,8 +2720,8 @@ void npc::move_to( const tripoint_bub_ms &pt, bool no_bashing, std::set<tripoint
     map &here = get_map();
     bool ceiling_blocking_climb = !here.has_floor_or_support( bub_pos() ) ||
                                   here.has_floor_or_support( p + tripoint_above );
-    if( sees_dangerous_field( p )
-        || ( nomove != nullptr && nomove->contains( p ) ) ) {
+    if( ( !cata_mp::is_proxy( *this ) && sees_dangerous_field( p ) ) ||
+        ( nomove != nullptr && nomove->contains( p ) ) ) {
         // Move to a neighbor field instead, if possible.
         // Maybe this code already exists somewhere?
         auto other_points = here.get_dir_circle( bub_pos(), p );

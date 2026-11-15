@@ -13,6 +13,7 @@
 #include "json.h"
 #include "kill_tracker.h"
 #include "line.h"
+#include "map/field_type.h"
 #include "map/map.h"
 #include "map_helpers.h"
 #include "mission.h"
@@ -262,6 +263,44 @@ TEST_CASE(
 
     cata_mp::host::handle_closed(940, "test over");
     cata_mp::host_end_of_turn();
+}
+
+TEST_CASE("player-controlled NPCs obey movement into fire", "[coop][movement][field]") {
+    clear_all_state();
+    const auto cleanup = on_out_of_scope([]() { clear_all_state(); });
+    const auto hosting = hosting_scope{};
+    get_avatar().setpos(tripoint_bub_ms{50, 50, 0});
+    const auto start = tripoint_bub_ms{60, 60, 0};
+    auto& guy = spawn_npc(start, "test_talker");
+    clear_character(guy);
+    guy.setpos(start);
+    guy.set_moves(100);
+    const auto destination = start + tripoint_rel_ms::east();
+    auto& here = get_map();
+    REQUIRE(here.add_field(destination, fd_fire, 1));
+    REQUIRE(here.get_field(destination, fd_fire) != nullptr);
+    const auto hp_before = guy.get_hp();
+
+    SECTION("a remote player enters the selected tile and takes fire damage") {
+        guy.set_value("coop_player", "Player 2");
+        REQUIRE(cata_mp::is_proxy(guy));
+
+        guy.move_to(destination, true);
+
+        CHECK(guy.bub_pos() == destination);
+        CHECK(guy.get_hp() < hp_before);
+        CHECK(guy.get_moves() < 100);
+    }
+
+    SECTION("an ordinary NPC still avoids the fire") {
+        REQUIRE_FALSE(cata_mp::is_proxy(guy));
+
+        guy.move_to(destination, true);
+
+        CHECK(guy.bub_pos() != destination);
+        CHECK(here.get_field(guy.bub_pos(), fd_fire) == nullptr);
+        CHECK(guy.get_hp() == hp_before);
+    }
 }
 
 TEST_CASE("remote player drinks water from a canteen on the ground", "[coop][eat]") {
