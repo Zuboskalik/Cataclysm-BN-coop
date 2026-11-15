@@ -21,10 +21,12 @@
 #include "mp_common.h"
 #include "mp_session.h"
 #include "npc.h"
+#include "options_helpers.h"
 #include "player_activity.h"
 #include "player_helpers.h"
 #include "state_helpers.h"
 #include "units.h"
+#include "weather/weather.h"
 
 #include <sstream>
 #include <utility>
@@ -301,6 +303,85 @@ TEST_CASE("player-controlled NPCs obey movement into fire", "[coop][movement][fi
         CHECK(here.get_field(guy.bub_pos(), fd_fire) == nullptr);
         CHECK(guy.get_hp() == hp_before);
     }
+}
+
+TEST_CASE("remote player body temperature follows their environment", "[coop][bodytemp]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto cleanup = on_out_of_scope([]() {
+        cata_mp::host::handle_closed(992, "test over");
+        cata_mp::host_end_of_turn();
+        clear_all_state();
+    });
+    const auto no_autosave = override_option("AUTOSAVE", "false");
+    const auto restore_new_game = restore_on_out_of_scope(g->new_game);
+    g->new_game = false;
+    auto& host = get_avatar();
+    host.setpos(tripoint_bub_ms{50, 50, 0});
+    host.set_moves(0);
+    const auto name = std::string("Temperature Tester");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(992, "test");
+    cata_mp::host::handle_line(
+        992,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        992,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+    auto* remote = static_cast<npc*>(nullptr);
+    for (auto& guy : g->all_npcs()) {
+        if (guy.get_value("coop_player") == name) { remote = &guy; }
+    }
+    REQUIRE(remote != nullptr);
+    clear_character(*remote);
+    remote->setpos(tripoint_bub_ms{60, 60, 0});
+    host.setpos(remote->abs_pos() + tripoint_rel_ms(-10, -10, 0));
+    host.set_moves(0);
+    for (auto& [bp, part] : remote->get_body()) {
+        part.set_temp_cur(BODYTEMP_NORM);
+        part.set_temp_conv(BODYTEMP_NORM);
+    }
+
+    auto& weather = get_weather();
+    weather.weather_id = weather_type_id("cloudy");
+    weather.weather_override = weather.weather_id;
+    weather.windspeed_override = 0;
+    weather.nextweather = calendar::turn + 1_hours;
+    weather.last_weather_position = host.abs_pos();
+    const auto near_fire = GENERATE(true, false);
+    weather.temperature = near_fire ? 26_c : -20_c;
+    if (near_fire) {
+        REQUIRE(get_map().add_field(remote->bub_pos() + tripoint_rel_ms::east(), fd_fire, 3));
+        REQUIRE(get_heat_radiation(remote->bub_pos(), false) > 0);
+        REQUIRE(get_heat_radiation(host.bub_pos(), false) == 0);
+    }
+    cata_mp::host::handle_line(992, R"({"t":"act","seq":1,"a":"wait","turns":1000})");
+
+    REQUIRE_FALSE(g->do_turn());
+
+    const auto torso = bodypart_id("torso");
+    const auto current = remote->get_part_temp_cur(torso);
+    const auto convergent = remote->get_part(torso).get_temp_conv();
+    if (near_fire) {
+        CHECK(current > BODYTEMP_NORM);
+        CHECK(convergent > host.get_part(torso).get_temp_conv());
+    } else {
+        CHECK(current < BODYTEMP_NORM);
+        CHECK(convergent < BODYTEMP_NORM);
+    }
+
+    const auto snapshot = cata_mp::write_json([remote](JsonOut& jsout) {
+        remote->serialize(jsout);
+    });
+    auto stream = std::istringstream(snapshot);
+    auto input = JsonIn(stream);
+    auto mirror = npc();
+    mirror.deserialize(input);
+    CHECK(units::to_legacy_bodypart_temp(mirror.get_part_temp_cur(torso))
+          == units::to_legacy_bodypart_temp(current));
+    CHECK(units::to_legacy_bodypart_temp(mirror.get_part(torso).get_temp_conv())
+          == units::to_legacy_bodypart_temp(convergent));
 }
 
 TEST_CASE("remote player drinks water from a canteen on the ground", "[coop][eat]") {

@@ -6954,6 +6954,7 @@ void game::npcmove()
         if( cata_mp::host_proxy_turn( guy ) ) {
             if( !guy.is_dead() ) {
                 guy.npc_update_body();
+                guy.update_bodytemp( m, get_weather() );
             }
             continue;
         }
