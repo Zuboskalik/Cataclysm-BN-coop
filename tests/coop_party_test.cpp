@@ -1,6 +1,5 @@
 #include "avatar.h"
 #include "avatar_action.h"
-#include "map/map.h"
 #include "bodypart.h"
 #include "catch/catch.hpp"
 #include "event.h"
@@ -9,6 +8,7 @@
 #include "json.h"
 #include "kill_tracker.h"
 #include "line.h"
+#include "map/map.h"
 #include "map_helpers.h"
 #include "mission.h"
 #include "monster.h"
@@ -183,7 +183,8 @@ TEST_CASE("the host running leaves an idle remote player's stamina alone", "[coo
         R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
             + "}");
     cata_mp::host::handle_line(
-        930, R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+        930,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
     const auto proxy = [&name]() -> npc* {
         for (npc& guy : g->all_npcs()) {
             if (guy.get_value("coop_player") == name) { return &guy; }
@@ -201,7 +202,8 @@ TEST_CASE("the host running leaves an idle remote player's stamina alone", "[coo
     map& here = get_map();
     for (auto step = 0; step < 20; ++step) {
         you.set_moves(100);
-        avatar_action::move(you, here, step % 2 == 0 ? tripoint_rel_ms::north() : tripoint_rel_ms::south());
+        avatar_action::
+            move(you, here, step % 2 == 0 ? tripoint_rel_ms::north() : tripoint_rel_ms::south());
         you.set_moves(0);
         g->do_turn();
         REQUIRE(proxy() != nullptr);
@@ -213,7 +215,8 @@ TEST_CASE("the host running leaves an idle remote player's stamina alone", "[coo
     cata_mp::host_end_of_turn();
 }
 
-TEST_CASE("a remote player's walk to a clicked spot stops at a monster in the way", "[coop][auto_move]") {
+TEST_CASE(
+    "a remote player's walk to a clicked spot stops at a monster in the way", "[coop][auto_move]") {
     clear_all_state();
     const auto hosting = hosting_scope{};
     get_avatar().setpos(tripoint_bub_ms{50, 50, 0});
@@ -225,7 +228,8 @@ TEST_CASE("a remote player's walk to a clicked spot stops at a monster in the wa
         R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
             + "}");
     cata_mp::host::handle_line(
-        940, R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+        940,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
     npc* walker = nullptr;
     for (npc& guy : g->all_npcs()) {
         if (guy.get_value("coop_player") == name) { walker = &guy; }
@@ -237,15 +241,63 @@ TEST_CASE("a remote player's walk to a clicked spot stops at a monster in the wa
     walker->set_moves(100);
 
     SECTION("a step of the walk does not attack") {
-        REQUIRE(cata_mp::host::perform_action(940, R"({"t":"act","seq":1,"a":"move","dx":1,"dy":0,"auto":true})"));
+        REQUIRE(cata_mp::host::perform_action(
+            940, R"({"t":"act","seq":1,"a":"move","dx":1,"dy":0,"auto":true})"));
         CHECK(walker->get_moves() == 100);
         CHECK(walker->bub_pos() == start);
     }
     SECTION("a step of the player's own attacks") {
-        REQUIRE(cata_mp::host::perform_action(940, R"({"t":"act","seq":1,"a":"move","dx":1,"dy":0})"));
+        REQUIRE(
+            cata_mp::host::perform_action(940, R"({"t":"act","seq":1,"a":"move","dx":1,"dy":0})"));
         CHECK(walker->get_moves() < 100);
     }
 
     cata_mp::host::handle_closed(940, "test over");
+    cata_mp::host_end_of_turn();
+}
+
+TEST_CASE("remote player drinks water from a canteen on the ground", "[coop][eat]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto name = std::string("Drinker");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(950, "test");
+    cata_mp::host::handle_line(
+        950,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        950,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+    npc* drinker = nullptr;
+    for (npc& guy : g->all_npcs()) {
+        if (guy.get_value("coop_player") == name) { drinker = &guy; }
+    }
+    REQUIRE(drinker != nullptr);
+    const auto pos = tripoint_bub_ms{60, 60, 0};
+    drinker->setpos(pos);
+    drinker->set_thirst(100);
+    drinker->set_moves(100);
+
+    const auto ground_pos = pos + tripoint_rel_ms::east();
+    get_map().i_clear(ground_pos);
+
+    auto canteen = item("canteen");
+    canteen.put_in(item("water_clean", calendar::turn, 2), item_pocket::pocket_type::CONTAINER);
+    get_map().add_item_or_charges(ground_pos, canteen);
+
+    const auto act_json = string_format(
+        R"({"t":"act","seq":1,"a":"eat","x":%d,"y":%d,"z":%d,"gidx":0,"type":"canteen","ord":0})",
+        ground_pos.x(), ground_pos.y(), ground_pos.z());
+
+    REQUIRE(cata_mp::host::perform_action(950, act_json));
+    CHECK(drinker->get_thirst() < 100);
+
+    const auto items_on_ground = get_map().i_at(ground_pos);
+    REQUIRE(!items_on_ground.empty());
+    CHECK(items_on_ground.front()->typeId() == itype_id("canteen"));
+    CHECK(!items_on_ground.front()->is_container_empty());
+
+    cata_mp::host::handle_closed(950, "test over");
     cata_mp::host_end_of_turn();
 }
