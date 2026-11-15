@@ -548,7 +548,7 @@ void iexamine::gaspump( player &p, const tripoint_bub_ms &examp )
     add_msg( m_info, _( "Out of order." ) );
 }
 
-void iexamine::translocator( player &, const tripoint_bub_ms &examp )
+void iexamine::translocator( player &p, const tripoint_bub_ms &examp )
 {
     // TODO: fix point types
     const tripoint_abs_omt omt_loc( project_to<coords::omt>( bub_to_abs( examp ) ) );
@@ -564,7 +564,7 @@ void iexamine::translocator( player &, const tripoint_bub_ms &examp )
         } );
         if( choice == 0 ) {
             item *vtm = item::spawn_temporary( "translocation_caster", calendar::start_of_cataclysm );
-            player_character.invoke_item( vtm );
+            p.invoke_item( vtm );
         } else if( choice == 1 ) {
             if( query_yn( _( "Deactivate this Translocator?" ) ) ) {
                 g->u.translocators->deactivate_teleporter( omt_loc, examp );
@@ -944,14 +944,7 @@ void iexamine::vending( player &p, const tripoint_bub_ms &examp )
                 p.add_msg_if_player( _( "With a beep, the empty vending machine shuts down." ) );
                 return;
             }
-            std::vector<std::string> names;
-            std::vector<bool> enabled;
-            for( const item *it : stock ) {
-                names.push_back( string_format( "%s  %s", it->tname(), format_money( it->price( false ) ) ) );
-                enabled.push_back( it->price( false ) <= money );
-            }
-            const int pick = cata_mp::remote_choice( string_format( _( "Money left: %s" ),
-                             format_money( money ) ), names, enabled, true );
+            const int pick = cata_mp::remote_vending( money, stock, p );
             if( pick < 0 || pick >= static_cast<int>( stock.size() ) ) {
                 return;
             }

@@ -13642,6 +13642,14 @@ void game::place_player_overmap( const tripoint_abs_omt &om_dest )
         u.mounted_creature->remove_effect( effect_ridden );
         u.mounted_creature = nullptr;
     }
+    std::vector<shared_ptr_fast<npc>> proxies;
+    if( cata_mp::is_host() ) {
+        for( const auto &n : active_npc ) {
+            if( n && cata_mp::is_proxy( *n ) ) {
+                proxies.push_back( n );
+            }
+        }
+    }
     // offload the active npcs.
     unload_npcs();
     for( monster &critter : all_monsters() ) {
@@ -13670,6 +13678,13 @@ void game::place_player_overmap( const tripoint_abs_omt &om_dest )
     update_overmap_seen();
     // load_npcs() scans around the player's absolute position, updated by place_player().
     load_npcs();
+    for( const auto &guy : proxies ) {
+        if( std::find( active_npc.begin(), active_npc.end(), guy ) == active_npc.end() ) {
+            active_npc.push_back( guy );
+            guy->get_mapbuffer().add_active_npc( guy );
+        }
+        cata_mp::place_npc_near_host( *guy );
+    }
 }
 
 bool game::phasing_move( const tripoint_bub_ms &dest_loc, const bool via_ramp )

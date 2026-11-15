@@ -16,6 +16,7 @@
 #include "avatar.h"
 #include "bodypart.h"
 #include "calendar.h"
+#include "mp_session.h"
 #if defined(TILES)
 #   include "cata_tiles.h"
 #   include "sdltiles.h"
@@ -736,6 +737,9 @@ auto projectile_attack( const projectile &proj_arg, const tripoint_bub_ms &sourc
         const dealt_projectile_attack attacked_proj = nextattack.second;
         // Copy from monster::on_hit
         attackedmon.type->sp_defense( attackedmon, origin, &attacked_proj );
+    }
+    if( do_animation && !do_draw_line && !attack.trajectory.empty() ) {
+        cata_mp::share_bullet_trajectory( attack.trajectory, bullet, custom_bullet_sprite );
     }
     return attack;
 }

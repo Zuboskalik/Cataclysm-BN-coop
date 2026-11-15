@@ -600,9 +600,7 @@ bool monexamine::pet_menu( monster &z )
     if( !z.has_flag( MF_RIDEABLE_MECH ) ) {
         if( z.has_flag( MF_PET_MOUNTABLE ) ) {
             auto status = you.get_mountable_status( z );
-            if( !you.is_avatar() ) {
-                amenu.addentry( mount, false, 'r', _( "Riding is not available in co-op yet" ) );
-            } else if( status.can_mount() ) {
+            if( status.can_mount() ) {
                 const auto msg = z.has_effect( effect_tied )
                                  ? _( "Untie and mount %s" )
                                  : _( "Mount %s" );
@@ -633,10 +631,8 @@ bool monexamine::pet_menu( monster &z )
         }
         amenu.addentry( check_bat, false, 'c', _( "%s battery level is %d%%" ), z.get_name(),
                         static_cast<int>( charge_percent ) );
-        if( !you.is_avatar() ) {
-            amenu.addentry( mount, false, 'r', _( "Riding is not available in co-op yet" ) );
-        } else if( ( you.primary_weapon().is_null() || z.type->mech_weapon.is_empty() ) &&
-                   z.get_battery_item() ) {
+        if( ( you.primary_weapon().is_null() || z.type->mech_weapon.is_empty() ) &&
+            z.get_battery_item() ) {
             amenu.addentry( mount, true, 'r', _( "Climb into the mech and take control" ) );
         } else if( !you.primary_weapon().is_null() && !z.type->mech_weapon.is_empty() ) {
             amenu.addentry( mount, false, 'r', _( "You cannot pilot this mech whilst wielding something" ) );

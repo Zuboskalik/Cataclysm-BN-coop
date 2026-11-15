@@ -1,6 +1,5 @@
 #include "../overmap/overmapbuffer.h"
 #include "animation.h"
-#include "mp_session.h"
 #include "avatar.h"
 #include "avatar_action.h"
 #include "bodypart.h"
@@ -28,6 +27,7 @@
 #include "map_iterator.h"
 #include "messages.h"
 #include "monster.h"
+#include "mp_session.h"
 #include "mutation.h"
 #include "player.h"
 #include "projectile.h"
@@ -969,9 +969,9 @@ void spell_effect::spawn_summoned_vehicle(
 }
 
 void spell_effect::translocate(const spell& sp, Creature& caster, const tripoint_bub_ms& target) {
-    avatar* you = caster.as_avatar();
-    if (you == nullptr) { return; }
-    you->translocators->translocate(
+    const Character* you = caster.as_character();
+    if (!you || !(you->is_avatar() || cata_mp::is_proxy(*you))) { return; }
+    get_avatar().translocators->translocate(
         spell_effect_area(sp, target, spell_effect_blast, caster, true));
 }
 

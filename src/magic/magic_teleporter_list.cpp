@@ -15,6 +15,7 @@
 #include "map/map.h"
 #include "map_iterator.h"
 #include "messages.h"
+#include "mp_session.h"
 #include "output.h"
 #include "panels.h"
 #include "string_formatter.h"
@@ -110,12 +111,13 @@ void teleporter_list::translocate(const std::set<tripoint_bub_ms>& targets) {
     for (const tripoint_bub_ms& pt : targets) {
         Character* you = g->critter_at<Character>(pt);
 
-        if (you && you->is_avatar()) {
+        if (you && (you->is_avatar() || cata_mp::is_proxy(*you))) {
             valid_targets = true;
             if (!place_avatar_overmap(*you, *omt_dest)) {
                 add_msg(_("Failed to teleport.  Teleporter obstructed or destroyed."));
                 deactivate_teleporter(*omt_dest, pt);
             }
+            break;
         }
     }
 

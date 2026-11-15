@@ -5,6 +5,7 @@
 // action, executes it on the proxy and streams the resulting world state back.
 
 #include "activity_actor_definitions.h"
+#include "animation.h"
 #include "avatar.h"
 #include "bionics.h"
 #include "calendar.h"
@@ -1877,6 +1878,10 @@ action_result do_disassemble(npc& guy, const JsonObject& jo) {
 
 // "Control vehicle" (^): take the wheel, or open the controls menu.
 action_result do_control_vehicle(npc& guy) {
+    if (guy.is_mounted()) {
+        guy.dismount();
+        return action_result{};
+    }
     const optional_vpart_position vp = get_map().veh_at(guy.bub_pos());
     if (!vp) {
         guy.controlling_vehicle = false;
@@ -2917,6 +2922,10 @@ bool host_keep_proxy_in_bubble(npc& guy) {
     return true;
 }
 
+void place_npc_near_host(npc& guy) {
+    host::place_npc_near_host(guy);
+}
+
 void host_proxy_died(const npc& guy) {
     if (!is_host()) { return; }
     host::peer_t* p = host::peer_of_proxy(guy.getID());
@@ -3089,6 +3098,41 @@ void share_custom_explosion(
         "{\"t\":\"anim\",\"k\":\"cexp\",\"n\":" + json_quote(name) + ",\"pts\":[" + pts + "]}");
 }
 
+void share_bullet_trajectories(const draw_bullet_trajectories_options& options) {
+    if (!is_host() || connected_players() == 0 || options.trajectories.empty()) { return; }
+    std::string trajs;
+    for (size_t t = 0; t < options.trajectories.size(); ++t) {
+        if (t > 0) { trajs += ","; }
+        trajs += "[";
+        const auto& traj = options.trajectories[t];
+        for (size_t p = 0; p < traj.size(); ++p) {
+            if (p > 0) { trajs += ","; }
+            const tripoint_abs_ms ap = bub_to_abs(traj[p]);
+            trajs += string_format("[%d,%d,%d]", ap.x(), ap.y(), ap.z());
+        }
+        trajs += "]";
+    }
+    const std::string b_str(1, options.bullet);
+    send_to_all_players(string_format(
+        "{\"t\":\"anim\",\"k\":\"bullet_traj\",\"b\":%s,\"s\":%s,\"l\":%s,\"trajs\":[%s]}",
+        json_quote(b_str), json_quote(options.custom_sprite),
+        options.draw_as_line ? "true" : "false", trajs));
+}
+
+void share_bullet_trajectory(
+    const std::vector<tripoint_bub_ms>& trajectory, char bullet,
+    const std::string& custom_sprite) {
+    if (!is_host() || connected_players() == 0 || trajectory.empty()) { return; }
+    const std::vector<std::vector<tripoint_bub_ms>> trajs = {trajectory};
+    const draw_bullet_trajectories_options opts{
+        .trajectories = trajs,
+        .bullet = bullet,
+        .draw_as_line = false,
+        .custom_sprite = custom_sprite,
+    };
+    share_bullet_trajectories(opts);
+}
+
 void share_revealed_overmap(const Character& who, const tripoint_abs_omt& center, int radius) {
     if (!is_host()) { return; }
     host::peer_t* p = host::peer_of_proxy(who.getID());
@@ -3185,6 +3229,29 @@ int remote_choice(
     message m(*answer);
     const int pick = m.object().get_int("i", -1);
     return pick >= 0 && pick < static_cast<int>(options.size()) ? pick : -1;
+}
+
+int remote_vending(int money, const std::vector<item*>& stock, const player& p) {
+    if (stock.empty()) { return -1; }
+    std::string items_json;
+    for (size_t i = 0; i < stock.size(); ++i) {
+        const item* it = stock[i];
+        if (i > 0) { items_json += ","; }
+        items_json += string_format(
+            "{\"name\":%s,\"price\":%d,\"en\":%s,\"col\":%s,\"info\":%s}",
+            json_quote(it->tname()),
+            it->price(false),
+            it->price(false) <= money ? "true" : "false",
+            json_quote(string_from_color(it->color_in_inventory(p))),
+            json_quote(it->info_string()));
+    }
+    const std::optional<std::string> answer = ask_remote(
+        "vending",
+        string_format(",\"money\":%d,\"items\":[%s]", money, items_json));
+    if (!answer) { return -1; }
+    message m(*answer);
+    const int pick = m.object().get_int("i", -1);
+    return pick >= 0 && pick < static_cast<int>(stock.size()) ? pick : -1;
 }
 
 player* remote_actor() {

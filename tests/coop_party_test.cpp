@@ -301,3 +301,42 @@ TEST_CASE("remote player drinks water from a canteen on the ground", "[coop][eat
     cata_mp::host::handle_closed(950, "test over");
     cata_mp::host_end_of_turn();
 }
+
+TEST_CASE("remote player can mount a pet creature", "[coop][mount]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto name = std::string("Rider");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(960, "test");
+    cata_mp::host::handle_line(
+        960,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        960,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+    npc* rider = nullptr;
+    for (npc& guy : g->all_npcs()) {
+        if (guy.get_value("coop_player") == name) { rider = &guy; }
+    }
+    REQUIRE(rider != nullptr);
+    const auto pos = tripoint_bub_ms{60, 60, 0};
+    rider->setpos(pos);
+    rider->set_moves(100);
+
+    const auto horse_pos = pos + tripoint_rel_ms::east();
+    monster& horse = spawn_test_monster("mon_horse", horse_pos);
+    horse.friendly = -1;
+    horse.add_effect(efftype_id("pet"), 1_days);
+    horse.add_effect(efftype_id("saddled"), 1_days);
+
+    const auto status = rider->get_mountable_status(horse);
+    CHECK(status.can_mount());
+
+    rider->mount_creature(horse);
+    CHECK(rider->is_mounted());
+    CHECK(horse.has_effect(efftype_id("ridden")));
+
+    cata_mp::host::handle_closed(960, "test over");
+    cata_mp::host_end_of_turn();
+}

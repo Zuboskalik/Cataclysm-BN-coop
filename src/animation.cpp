@@ -688,6 +688,8 @@ void draw_bullet_trajectories( const draw_bullet_trajectories_options &options )
         return;
     }
 
+    cata_mp::share_bullet_trajectories( options );
+
     g->refresh_player_visibility_cache_if_needed();
 
 #if !defined( TILES )

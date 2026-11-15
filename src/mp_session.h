@@ -33,6 +33,7 @@ class npc;
 class player;
 class vehicle;
 struct talk_data;
+struct draw_bullet_trajectories_options;
 namespace npc_trading
 {
 struct trade_state;
@@ -130,6 +131,9 @@ bool remote_prompts_active();
 // they cancelled or left.
 int remote_choice( const std::string &text, const std::vector<std::string> &options,
                    const std::vector<bool> &enabled, bool allow_cancel );
+// Lets the remote player pick one of `stock` from a vending machine, displaying
+// item descriptions on the side panel.  Returns its index in `stock`, or -1 if cancelled.
+int remote_vending( int money, const std::vector<item *> &stock, const player &p );
 // Shows a message to the remote player without waiting for an answer.
 void remote_message( const std::string &text );
 // The character of the remote player whose action is running, if any.
@@ -194,6 +198,13 @@ void share_explosion( const tripoint_bub_ms &p, int radius, const nc_color &col,
                       const std::string &name );
 void share_custom_explosion( const std::map<tripoint_bub_ms, nc_color> &area,
                              const std::string &name );
+// Host: bullet and projectile flight animations are drawn on remote players' screens.
+void share_bullet_trajectories( const draw_bullet_trajectories_options &options );
+void share_bullet_trajectory( const std::vector<tripoint_bub_ms> &trajectory, char bullet,
+                              const std::string &custom_sprite );
+
+// Host: places proxy character `guy` on a free spot near the host.
+void place_npc_near_host( npc &guy );
 // Host: `who` (a remote player's character) learned the overmap within
 // `radius` of `center`; their client is told.
 void share_revealed_overmap( const Character &who, const tripoint_abs_omt &center, int radius );

@@ -584,6 +584,18 @@ void apply_state(message& m) {
     }
     rebuild_monster_seeds();
 
+    if (u.has_effect(efftype_id("riding"))) {
+        if (!u.mounted_creature) {
+            if (monster* const mon = g->critter_at<monster>(u.bub_pos())) {
+                u.mounted_creature = g->shared_from(*mon);
+                mon->mounted_player = &u;
+            }
+        }
+    } else if (u.mounted_creature) {
+        u.mounted_creature->mounted_player = nullptr;
+        u.mounted_creature = nullptr;
+    }
+
     // ---- other characters
     if (jo.has_int("host_id")) { S.host_id = jo.get_int("host_id"); }
     if (jo.has_bool("npc_reset") && jo.get_bool("npc_reset")) { remove_all_npcs(); }
@@ -1562,6 +1574,32 @@ void play_animation(message& m) {
         if (!area.empty()) {
             explosion_handler::draw_custom_explosion(get_avatar().bub_pos(), area, name);
         }
+    } else if (kind == "bullet_traj") {
+        char bullet = '*';
+        const std::string b_str = jo.get_string("b", "*");
+        if (!b_str.empty()) { bullet = b_str[0]; }
+        const std::string custom_sprite = jo.get_string("s", "");
+        const bool draw_as_line = jo.get_bool("l", false);
+        std::vector<std::vector<tripoint_bub_ms>> trajectories;
+        for (JsonArray traj_arr : jo.get_array("trajs")) {
+            std::vector<tripoint_bub_ms> traj;
+            for (JsonArray pt_arr : traj_arr) {
+                const tripoint_abs_ms ap(pt_arr.get_int(0), pt_arr.get_int(1), pt_arr.get_int(2));
+                const tripoint_bub_ms bp = abs_to_bub(ap);
+                traj.push_back(bp);
+            }
+            if (!traj.empty()) {
+                trajectories.push_back(std::move(traj));
+            }
+        }
+        if (!trajectories.empty()) {
+            draw_bullet_trajectories({
+                .trajectories = trajectories,
+                .bullet = bullet,
+                .draw_as_line = draw_as_line,
+                .custom_sprite = custom_sprite,
+            });
+        }
     }
 }
 
@@ -1733,6 +1771,144 @@ void answer_question(message& m) {
         popup.query();
         reply =
             popup.canceled() ? ",\"ok\":false" : ",\"ok\":true,\"s\":" + json_quote(popup.text());
+    } else if (kind == "vending") {
+        struct vend_entry {
+            std::string name;
+            int price = 0;
+            bool enabled = true;
+            nc_color color = c_white;
+            std::string info;
+        };
+        std::vector<vend_entry> items;
+        const int money = jo.get_int("money", 0);
+        for (JsonObject e : jo.get_array("items")) {
+            vend_entry itm;
+            itm.name = e.get_string("name", "");
+            itm.price = e.get_int("price", 0);
+            itm.enabled = e.get_bool("en", true);
+            itm.color = color_from_string(e.get_string("col", "white"), report_color_error::no);
+            itm.info = e.get_string("info", "");
+            items.push_back(std::move(itm));
+        }
+        int pick = -1;
+        if (!items.empty()) {
+            int w_items_w = 0;
+            int w_info_w = 0;
+            int list_lines = 0;
+            int lines_above = 0;
+            int lines_below = 0;
+            constexpr int first_item_offset = 3;
+
+            catacurses::window w;
+            catacurses::window w_item_info;
+
+            ui_adaptor ui;
+            ui.on_screen_resize([&](ui_adaptor& ui_ad) {
+                const point padding(
+                    std::max(0, TERMX - FULL_SCREEN_WIDTH) / 4,
+                    std::max(0, TERMY - FULL_SCREEN_HEIGHT) / 6);
+                const int window_h = FULL_SCREEN_HEIGHT + std::max(0, TERMY - FULL_SCREEN_HEIGHT) * 2 / 3;
+                const int window_w = FULL_SCREEN_WIDTH + std::max(0, TERMX - FULL_SCREEN_WIDTH) / 2;
+                w_items_w = window_w / 2;
+                w_info_w = window_w - w_items_w;
+                list_lines = window_h - 4;
+
+                lines_above = list_lines / 2;
+                lines_below = list_lines / 2 + list_lines % 2;
+
+                w = catacurses::newwin(window_h, w_items_w, padding);
+                w_item_info = catacurses::newwin(window_h, w_info_w, padding + point(w_items_w, 0));
+
+                ui_ad.position(padding, point(window_w, window_h));
+            });
+            ui.mark_resize();
+
+            input_context ctxt("VENDING_MACHINE");
+            ctxt.register_updown();
+            ctxt.register_action("CONFIRM");
+            ctxt.register_action("QUIT");
+            ctxt.register_action("HELP_KEYBINDINGS");
+
+            int cur_pos = 0;
+            const int num_items = static_cast<int>(items.size());
+
+            ui.on_redraw([&](const ui_adaptor&) {
+                const int page_size = std::min(num_items, list_lines);
+
+                werase(w);
+                wborder(w, LINE_XOXO, LINE_XOXO, LINE_OXOX, LINE_OXOX,
+                        LINE_OXXO, LINE_OOXX, LINE_XXOO, LINE_XOOX);
+                mvwhline(w, point(1, first_item_offset - 1), LINE_OXOX, w_items_w - 2);
+                mvwaddch(w, point(0, first_item_offset - 1), LINE_XXXO);
+                mvwaddch(w, point(w_items_w - 1, first_item_offset - 1), LINE_XOXX);
+
+                trim_and_print(w, point(2, 1), w_items_w - 3, c_light_gray,
+                               _("Money left: %s"), format_money(money));
+
+                int page_beg = 0;
+                if (cur_pos < num_items - cur_pos) {
+                    page_beg = std::max(0, cur_pos - lines_above);
+                } else {
+                    const int page_end = std::min(num_items, cur_pos + lines_below);
+                    page_beg = std::max(0, page_end - list_lines);
+                }
+
+                for (int line = 0; line < page_size; ++line) {
+                    const int i = page_beg + line;
+                    const auto& elem = items[i];
+                    const nc_color item_color = elem.enabled ? elem.color : c_dark_gray;
+                    const nc_color line_color = i == cur_pos ? hilite(item_color) : item_color;
+                    trim_and_print(w, point(1, first_item_offset + line), w_items_w - 3, line_color,
+                                   "  %s", elem.name.c_str());
+                }
+
+                draw_scrollbar(w, cur_pos, list_lines, num_items, point(0, first_item_offset));
+                wnoutrefresh(w);
+
+                // Item description panel
+                const auto& cur_item = items[cur_pos];
+                werase(w_item_info);
+                const int info_width = std::max(0, w_info_w - 3);
+                if (info_width > 0 && !cur_item.info.empty()) {
+                    const auto info_lines = foldstring(cur_item.info, info_width);
+                    for (size_t info_line = 0; info_line < info_lines.size(); ++info_line) {
+                        const point line_pos(2, 1 + static_cast<int>(info_line));
+                        const auto& line_text = info_lines[info_line];
+                        if (line_text == "--") {
+                            mvwhline(w_item_info, line_pos, LINE_OXOX, info_width);
+                        } else if (!line_text.empty()) {
+                            trim_and_print(w_item_info, line_pos, info_width, c_light_gray, line_text);
+                        }
+                    }
+                }
+                wborder(w_item_info, LINE_XOXO, LINE_XOXO, LINE_OXOX, LINE_OXOX,
+                        LINE_OXXO, LINE_OOXX, LINE_XXOO, LINE_XOOX);
+
+                const nc_color name_color = cur_item.enabled ? cur_item.color : c_dark_gray;
+                const std::string cost = format_money(cur_item.price);
+                const std::string header_text = string_format("<%s> %s",
+                                                colorize(cur_item.name, name_color), cost);
+                trim_and_print(w_item_info, point_east, std::max(0, w_info_w - 3), c_light_gray, header_text);
+                wnoutrefresh(w_item_info);
+            });
+
+            for (;;) {
+                ui_manager::redraw();
+                const std::string& action = ctxt.handle_input();
+                if (action == "DOWN") {
+                    cur_pos = (cur_pos + 1) % num_items;
+                } else if (action == "UP") {
+                    cur_pos = (cur_pos + num_items - 1) % num_items;
+                } else if (action == "CONFIRM") {
+                    pick = cur_pos;
+                    break;
+                } else if (action == "QUIT") {
+                    pick = -1;
+                    break;
+                }
+            }
+        }
+        reply = string_format(",\"i\":%d", pick);
     } else {
         std::vector<std::string> opts;
         std::vector<bool> en;
