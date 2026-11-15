@@ -19,6 +19,7 @@
 #include "map_iterator.h"
 #include "messages.h"
 #include "monster.h"
+#include "mp_session.h"
 #include "npc.h"
 #include "output.h"
 #include "player.h"
@@ -806,6 +807,9 @@ std::vector<npc *> get_crafting_helpers( const Character &who, int max )
     return g->get_npcs_if( [&]( const npc & guy ) {
         // NPCs can help craft if awake, taking orders, within pickup range and have clear path
         if( max > 0 && n >= max ) {
+            return false;
+        }
+        if( cata_mp::is_proxy( guy ) ) {
             return false;
         }
         bool ok = !guy.in_sleep_state() && guy.is_obeying( who ) &&

@@ -407,3 +407,28 @@ TEST_CASE("remote player pickup charged item without count takes all charges", "
     cata_mp::host::handle_closed(970, "test over");
     cata_mp::host_end_of_turn();
 }
+
+TEST_CASE("remote player is not included in crafting or study helpers", "[coop][helpers]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto pos = tripoint_bub_ms{60, 60, 0};
+    get_avatar().setpos(pos);
+
+    npc& player2 = spawn_remote_player(pos + tripoint_rel_ms::east());
+    player2.set_attitude(NPCATT_FOLLOW);
+
+    const auto helpers = character_funcs::get_crafting_helpers(get_avatar());
+    CHECK(helpers.empty());
+
+    npc& follower = spawn_npc(pos + tripoint_rel_ms::south(), "test_talker");
+    clear_character(follower);
+    follower.setpos(pos + tripoint_rel_ms::south());
+    follower.set_attitude(NPCATT_FOLLOW);
+    follower.set_fac(faction_id("your_followers"));
+
+    const auto helpers_with_npc = character_funcs::get_crafting_helpers(get_avatar());
+    CHECK(helpers_with_npc.size() == 1);
+    if (!helpers_with_npc.empty()) {
+        CHECK(helpers_with_npc.front()->getID() == follower.getID());
+    }
+}
