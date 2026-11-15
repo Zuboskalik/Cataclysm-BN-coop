@@ -12709,6 +12709,9 @@ void game::set_safe_mode( safe_mode_type mode )
 {
     safe_mode = mode;
     safe_mode_warning_logged = false;
+    if( cata_mp::is_client() ) {
+        cata_mp::client_sync_safemode( mode != SAFE_MODE_OFF );
+    }
 }
 
 bool game::is_dangerous_tile( const tripoint_bub_ms &dest_loc ) const

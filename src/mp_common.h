@@ -118,6 +118,7 @@ std::vector<std::string> joined_names();
 // Runs an action message of a joined player now, as on their turn.
 bool perform_action( int peer, const std::string &line );
 int auto_wait_turns( int peer );
+auto peer_safe_mode( int peer ) -> bool;
 void kick_menu();
 std::string status_line();
 } // namespace host
@@ -135,6 +136,7 @@ void leave_session( bool ask );
 // Asks the host for submaps that had to be stubbed out locally.
 void flush_placeholders();
 void update_waiting_notice();
+auto is_local_ui_action( action_id act ) -> bool;
 } // namespace client
 
 } // namespace cata_mp

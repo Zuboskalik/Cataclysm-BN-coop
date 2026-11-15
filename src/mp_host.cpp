@@ -150,6 +150,7 @@ struct peer_t {
     // A hostile came into view since the player's last action: like the
     // player's safe mode, it stops a walk to a clicked spot.
     std::optional<std::string> spotted;
+    bool safe_mode = true;
 
     // What this client already has, by content hash.
     std::map<tripoint_abs_sm, size_t> sm_sent;
@@ -1174,7 +1175,7 @@ action_result do_move(npc& guy, int dx, int dy) {
 // creature in the way (instead of attacking or pushing past it) and when a
 // hostile comes into view.
 bool auto_move_stopped(npc& guy, const peer_t& p, const tripoint_bub_ms& dest) {
-    if (p.spotted) {
+    if (p.safe_mode && p.spotted) {
         guy.add_msg_if_player(m_warning, *p.spotted);
         guy.add_msg_if_player(m_warning, _("Auto-move canceled."));
         return true;
@@ -2404,7 +2405,7 @@ void watch_for_distractions(npc& guy, peer_t& p) {
         return seen;
     }();
     const int seen = static_cast<int>(hostiles.size());
-    if (seen > p.seen_hostiles) {
+    if (p.safe_mode && seen > p.seen_hostiles) {
         p.spotted =
             seen - p.seen_hostiles == 1
                 ? string_format(_("%s spotted!"), hostiles.back()->get_name())
@@ -2678,6 +2679,12 @@ void handle_line(int peer, const std::string& line) {
             }
             proxy->backlog.clear();
         }
+    } else if (t == "safemode") {
+        JsonObject jo = m.object();
+        p->safe_mode = jo.get_bool("on", true);
+        if (!p->safe_mode) {
+            p->spotted.reset();
+        }
     } else if (t == "need") {
         JsonObject jo = m.object();
         for (JsonArray e : jo.get_array("sm")) {
@@ -2718,6 +2725,11 @@ bool perform_action(const int peer, const std::string& line) {
 int auto_wait_turns(const int peer) {
     const peer_t* p = find_peer(peer);
     return p != nullptr ? p->auto_wait_turns : 0;
+}
+
+auto peer_safe_mode(const int peer) -> bool {
+    const peer_t* p = find_peer(peer);
+    return p != nullptr ? p->safe_mode : true;
 }
 
 int joined_count() {

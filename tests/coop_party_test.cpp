@@ -1,3 +1,4 @@
+#include "action.h"
 #include "avatar.h"
 #include "avatar_action.h"
 #include "bodypart.h"
@@ -482,5 +483,37 @@ TEST_CASE("remote player waiting is not interrupted by distant hostiles", "[coop
     CHECK(cata_mp::host::auto_wait_turns(985) == 0);
 
     cata_mp::host::handle_closed(985, "test over");
+    cata_mp::host_end_of_turn();
+}
+
+TEST_CASE("remote player safe mode actions and sync", "[coop][safemode]") {
+    clear_all_state();
+    CHECK(cata_mp::client::is_local_ui_action(ACTION_TOGGLE_SAFEMODE));
+    CHECK(cata_mp::client::is_local_ui_action(ACTION_TOGGLE_AUTOSAFE));
+    CHECK(cata_mp::client::is_local_ui_action(ACTION_IGNORE_ENEMY));
+    CHECK(cata_mp::client::is_local_ui_action(ACTION_WHITELIST_ENEMY));
+    CHECK(cata_mp::client::is_local_ui_action(ACTION_TOGGLE_AUTO_TRAVEL_MODE));
+
+    const auto hosting = hosting_scope{};
+    const auto name = std::string("SafeGuy");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(986, "test");
+    cata_mp::host::handle_line(
+        986,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        986,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+
+    CHECK(cata_mp::host::peer_safe_mode(986) == true);
+
+    cata_mp::host::handle_line(986, R"({"t":"safemode","on":false})");
+    CHECK(cata_mp::host::peer_safe_mode(986) == false);
+
+    cata_mp::host::handle_line(986, R"({"t":"safemode","on":true})");
+    CHECK(cata_mp::host::peer_safe_mode(986) == true);
+
+    cata_mp::host::handle_closed(986, "test over");
     cata_mp::host_end_of_turn();
 }

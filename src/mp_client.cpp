@@ -1348,7 +1348,37 @@ void request_armor_layers() {
     send_action("armor_layers", ",\"order\":[" + order + "]");
 }
 
-bool is_local_ui_action(action_id act) {
+bool try_reconnect() {
+    for (int attempt = 1; attempt <= 3; ++attempt) {
+        welcome_info info;
+        std::string err;
+        log(string_format("reconnect attempt %d", attempt));
+        if (connect_and_probe(info, err)) {
+            net::client_send(
+                "{\"t\":\"join\",\"name\":" + json_quote(S.my_name)
+                + ",\"ver\":" + json_quote(protocol_version_string())
+                + ",\"pw\":" + json_quote(S.password) + ",\"char\":null}");
+            if (wait_for_message(
+                    {"joined"}, handshake_timeout_ms, _("Rejoining the session…"), err)) {
+                S.my_turn = false;
+                S.awaiting_ack = false;
+                S.waiting = false;
+                return true;
+            }
+        }
+        log("reconnect failed: " + err);
+        static_popup notice;
+        notice.message(_("Connection lost.  Retrying in a moment… (%d/3)"), attempt);
+        ui_manager::redraw();
+        refresh_display();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+    }
+    return false;
+}
+
+} // namespace
+
+auto is_local_ui_action(action_id act) -> bool {
     switch (act) {
         case ACTION_LOOK:
         case ACTION_PEEK:
@@ -1368,6 +1398,17 @@ bool is_local_ui_action(action_id act) {
         case ACTION_AUTOPICKUP:
         case ACTION_AUTONOTES:
         case ACTION_SAFEMODE:
+        case ACTION_TOGGLE_SAFEMODE:
+        case ACTION_TOGGLE_AUTOSAFE:
+        case ACTION_IGNORE_ENEMY:
+        case ACTION_WHITELIST_ENEMY:
+        case ACTION_TOGGLE_AUTO_TRAVEL_MODE:
+        case ACTION_TOGGLE_AUTO_PICKUP:
+        case ACTION_TOGGLE_AUTO_FEATURES:
+        case ACTION_TOGGLE_AUTO_PULP_BUTCHER:
+        case ACTION_TOGGLE_AUTO_MINING:
+        case ACTION_TOGGLE_THIEF_MODE:
+        case ACTION_TOGGLE_AUTO_FORAGING:
         case ACTION_DISTRACTION_MANAGER:
         case ACTION_COLOR:
         case ACTION_WORLD_MODS:
@@ -1403,36 +1444,6 @@ bool is_local_ui_action(action_id act) {
             return false;
     }
 }
-
-bool try_reconnect() {
-    for (int attempt = 1; attempt <= 3; ++attempt) {
-        welcome_info info;
-        std::string err;
-        log(string_format("reconnect attempt %d", attempt));
-        if (connect_and_probe(info, err)) {
-            net::client_send(
-                "{\"t\":\"join\",\"name\":" + json_quote(S.my_name)
-                + ",\"ver\":" + json_quote(protocol_version_string())
-                + ",\"pw\":" + json_quote(S.password) + ",\"char\":null}");
-            if (wait_for_message(
-                    {"joined"}, handshake_timeout_ms, _("Rejoining the session…"), err)) {
-                S.my_turn = false;
-                S.awaiting_ack = false;
-                S.waiting = false;
-                return true;
-            }
-        }
-        log("reconnect failed: " + err);
-        static_popup notice;
-        notice.message(_("Connection lost.  Retrying in a moment… (%d/3)"), attempt);
-        ui_manager::redraw();
-        refresh_display();
-        std::this_thread::sleep_for(std::chrono::milliseconds(2500));
-    }
-    return false;
-}
-
-} // namespace
 
 // ============================================================================
 // Network message handling
@@ -2299,6 +2310,7 @@ bool join_game() {
         _("Co-op: %s opens the co-op menu, %s chats.  Your actions are performed in turn with the host."),
         press_x(ACTION_COOP_MENU), press_x(ACTION_COOP_CHAT));
     log("joined as " + S.my_name);
+    client_sync_safemode(g->safe_mode != SAFE_MODE_OFF);
     return true;
 }
 
@@ -2426,6 +2438,10 @@ bool client_intercept_action(action_id act, const std::optional<tripoint_bub_ms>
         case ACTION_MOVE_BACK_LEFT:
         case ACTION_MOVE_LEFT:
         case ACTION_MOVE_FORTH_LEFT: {
+            if (!g->check_safe_mode_allowed()) {
+                u.clear_destination();
+                return true;
+            }
             if (u.controlling_vehicle) {
                 // At the wheel the keys steer (x) and accelerate/brake (y).
                 const point_rel_ms d = get_delta_from_movement_action(act, iso_rotate::no);
@@ -2451,12 +2467,15 @@ bool client_intercept_action(action_id act, const std::optional<tripoint_bub_ms>
             client::send_action("control_vehicle");
             return true;
         case ACTION_MOVE_DOWN:
+            if (!g->check_safe_mode_allowed()) { return true; }
             client::send_action("vmove", ",\"dz\":-1");
             return true;
         case ACTION_MOVE_UP:
+            if (!g->check_safe_mode_allowed()) { return true; }
             client::send_action("vmove", ",\"dz\":1");
             return true;
         case ACTION_PAUSE:
+            if (!g->check_safe_mode_allowed()) { return true; }
             if (u.controlling_vehicle) {
                 // At the wheel, waiting means keeping the vehicle going.
                 client::send_action("drive", ",\"dx\":0,\"dy\":0");
@@ -2465,6 +2484,7 @@ bool client_intercept_action(action_id act, const std::optional<tripoint_bub_ms>
             client::send_action("pause");
             return true;
         case ACTION_WAIT: {
+            if (!g->check_safe_mode_allowed()) { return true; }
             int turns = 0;
             std::string until;
             if (client::choose_wait_duration(turns, until)) {
@@ -2821,6 +2841,11 @@ namespace cata_mp {
 bool can_auto_move() {
     return !is_client()
         || (client::S.my_turn && !client::S.awaiting_ack && !client::S.waiting && !client::S.busy);
+}
+
+auto client_sync_safemode(bool on) -> void {
+    if (!is_client()) { return; }
+    client::send(string_format("{\"t\":\"safemode\",\"on\":%s}", on ? "true" : "false"));
 }
 
 bool input_should_return() {

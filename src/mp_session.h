@@ -116,6 +116,8 @@ bool host_blocks_action( action_id act );
 // our turn and the host is not busy with our previous action).  Always true
 // outside a client.
 bool can_auto_move();
+// Client: synchronizes safe mode toggle state with the host.
+auto client_sync_safemode( bool on ) -> void;
 
 // Client never simulates the world; these gates turn simulation side effects
 // off (monster spawning, NPC loading, saving, activity time skipping).
