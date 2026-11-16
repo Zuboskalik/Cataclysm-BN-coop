@@ -8,6 +8,7 @@
 #include "animation.h"
 #include "armor_layers.h"
 #include "avatar.h"
+#include "avatar_action.h"
 #include "bionics.h"
 #include "calendar.h"
 #include "cata_utility.h"
@@ -890,6 +891,10 @@ void request_fire() {
                 u.primary_weapon().tname());
         return;
     }
+    // The checks the single-player path runs before opening the targeting UI.
+    // Without them the UI blocks firing with a generic 'out of ammo' status
+    // and the real reason (e.g. a mounted gun needs bracing) stays hidden.
+    if (!avatar_action::can_fire_weapon(u, get_map(), u.primary_weapon())) { return; }
     // Aiming takes the character's turns, like in single player: we give the
     // targeting UI enough move budget (matching the host's 1000 move clamp)
     // so any aim level fits in one go without artificial turn delays. The host

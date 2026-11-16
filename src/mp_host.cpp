@@ -1666,6 +1666,15 @@ action_result do_fire(npc& guy, const JsonObject& jo) {
     if (!mode->ammo_sufficient(mode.qty > 1 ? mode.qty : 1) && !mode->ammo_sufficient()) {
         return fail(string_format(_("Your %s is empty."), gun->tname()));
     }
+    // Same mounted-gun rule the firing checks enforce for the avatar (see
+    // ranged::gunmode_checks_weapon): without support the shot is refused.
+    if (mode->has_flag(flag_MOUNTED_GUN) && guy.get_size() <= creature_size::medium
+        && !guy.worn_with_flag(flag_HEAVY_WEAPON_SUPPORT)
+        && !ranged::can_use_heavy_weapon(guy, get_map(), guy.bub_pos())) {
+        return fail(string_format(
+            _("You must stand near acceptable terrain or furniture to fire the %s.  A table, a mound of dirt, a broken window, etc."),
+            gun->tname()));
+    }
     if (jo.has_member("recoil")) {
         // Aimed in the client's targeting UI: take its result and the time
         // it took (a long aim makes the character skip the following turns).

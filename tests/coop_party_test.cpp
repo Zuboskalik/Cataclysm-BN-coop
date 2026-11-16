@@ -25,6 +25,7 @@
 #include "options_helpers.h"
 #include "player_activity.h"
 #include "player_helpers.h"
+#include "ranged.h"
 #include "state_helpers.h"
 #include "units.h"
 #include "weather/weather.h"
@@ -746,6 +747,57 @@ TEST_CASE("remote player wielding worn holster draws from it", "[coop][holster]"
 
     cata_mp::host::handle_closed(987, "test over");
     cata_mp::host_end_of_turn();
+}
+
+TEST_CASE(
+    "remote player fires a mounted gun only from a braced position", "[coop][fire][mounted]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto cleanup = on_out_of_scope([]() {
+        cata_mp::host::handle_closed(994, "test over");
+        cata_mp::host_end_of_turn();
+        clear_all_state();
+    });
+    const auto name = std::string("Firefighter");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(994, "test");
+    cata_mp::host::handle_line(
+        994,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        994,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+    npc* guy = nullptr;
+    for (npc& n : g->all_npcs()) {
+        if (n.get_value("coop_player") == name) { guy = &n; }
+    }
+    REQUIRE(guy != nullptr);
+    clear_character(*guy);
+    guy->setpos(tripoint_bub_ms{60, 60, 0});
+    auto& gun = guy->i_add(item::spawn("watercannon"));
+    gun.ammo_set(itype_id("water"), 100);
+    REQUIRE(guy->wield(gun));
+    guy->set_moves(1000);
+    const auto target = bub_to_abs(guy->bub_pos() + tripoint_rel_ms(3, 0, 0));
+    const auto fire = string_format(
+        R"({"t":"act","seq":1,"a":"fire","x":%d,"y":%d,"z":%d,"recoil":0.0,"aim_moves":0})",
+        target.x(), target.y(), target.z());
+
+    SECTION("without a support nearby the shot is refused") {
+        REQUIRE_FALSE(ranged::can_use_heavy_weapon(*guy, get_map(), guy->bub_pos()));
+        cata_mp::host::perform_action(994, fire);
+        CHECK(gun.ammo_remaining() == 100);
+        CHECK(guy->get_moves() == 1000);
+    }
+
+    SECTION("a mountable table braces the shot") {
+        get_map().furn_set(guy->bub_pos() + tripoint_rel_ms::east(), furn_str_id("f_table"));
+        REQUIRE(ranged::can_use_heavy_weapon(*guy, get_map(), guy->bub_pos()));
+        cata_mp::host::perform_action(994, fire);
+        CHECK(gun.ammo_remaining() < 100);
+        CHECK(guy->get_moves() < 1000);
+    }
 }
 
 TEST_CASE("host drop snapshot clears its weapon within the same turn", "[coop][drop][sync]") {
