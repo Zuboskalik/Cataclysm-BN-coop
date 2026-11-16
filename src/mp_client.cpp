@@ -1142,6 +1142,40 @@ void request_use(item* it) {
     send_action("use", *where + ",\"method\":" + json_quote(method));
 }
 
+// Unload ('U'): containers, holsters and bandoliers, like the single-player
+// picker.  Liquids are poured at the spot the player picks here; the host
+// moves the remaining contents to the character.
+void request_unload() {
+    avatar& u = get_avatar();
+    item* it = g->inv_map_splice(
+        [](const item& candidate) {
+            return (candidate.is_container() || candidate.is_bandolier()
+                    || candidate.type->can_use("holster"))
+                   && !candidate.is_container_empty();
+        },
+        _("Unload item"), 1, _("You have nothing to unload."));
+    if (it == nullptr) {
+        add_msg(_("Never mind."));
+        return;
+    }
+    const std::optional<std::string> where = client::any_item_fields(it);
+    if (!where) {
+        add_msg(m_info, _("You can't reach that."));
+        return;
+    }
+    std::string extra = *where;
+    if (it->has_item_with([](const item& contained) { return contained.made_of(LIQUID); })) {
+        const std::optional<tripoint_bub_ms> dest =
+            choose_adjacent(string_format(_("Pour %s where?"), it->tname()));
+        if (!dest) {
+            add_msg(_("Never mind."));
+            return;
+        }
+        extra += pos_fields(*dest);
+    }
+    client::send_action("unload", extra);
+}
+
 // Butcher (B): corpses on our tile; the host runs the butchering activity,
 // which checks tools, light and so on itself.
 void request_butcher() {
@@ -2748,6 +2782,9 @@ bool client_intercept_action(action_id act, const std::optional<tripoint_bub_ms>
             return true;
         case ACTION_SELECT_FIRE_MODE:
             client::send_action("fire_mode");
+            return true;
+        case ACTION_UNLOAD:
+            client::request_unload();
             return true;
         case ACTION_TAKE_OFF:
             client::request_item_action("takeoff", game_menus::inv::take_off(u));

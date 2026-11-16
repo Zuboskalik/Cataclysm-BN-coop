@@ -800,6 +800,61 @@ TEST_CASE(
     }
 }
 
+TEST_CASE("remote player pours liquid out of a container", "[coop][unload]") {
+    clear_all_state();
+    const auto hosting = hosting_scope{};
+    const auto cleanup = on_out_of_scope([]() {
+        cata_mp::host::handle_closed(995, "test over");
+        cata_mp::host_end_of_turn();
+        clear_all_state();
+    });
+    const auto name = std::string("Pourer");
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(995, "test");
+    cata_mp::host::handle_line(
+        995,
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+            + "}");
+    cata_mp::host::handle_line(
+        995,
+        R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character + "}");
+    npc* guy = nullptr;
+    for (npc& n : g->all_npcs()) {
+        if (n.get_value("coop_player") == name) { guy = &n; }
+    }
+    REQUIRE(guy != nullptr);
+    clear_character(*guy);
+    guy->setpos(tripoint_bub_ms{60, 60, 0});
+    auto& bottle = guy->i_add(item::spawn("bottle_plastic"));
+    bottle.put_in(item::spawn("water_clean", calendar::turn, 2));
+    REQUIRE_FALSE(bottle.is_container_empty());
+    const auto dest_bub = guy->bub_pos() + tripoint_rel_ms::east();
+    const auto dest = bub_to_abs(dest_bub);
+    const auto unload = string_format(
+        R"({"t":"act","seq":1,"a":"unload","idx":%d,"type":"bottle_plastic","ord":0,"name":%s,"x":%d,"y":%d,"z":%d})",
+        cata_mp::item_index_of(*guy, &bottle),
+        cata_mp::json_quote(cata_mp::item_match_name(bottle)), dest.x(), dest.y(), dest.z());
+
+    SECTION("pouring at an adjacent tile empties the container") {
+        cata_mp::host::perform_action(995, unload);
+        CHECK(bottle.is_container_empty());
+        // Like the single-player pour, the liquid becomes a field on the tile.
+        CHECK(get_map().get_field(dest_bub, field_type_id("fd_water")) != nullptr);
+        CHECK(guy->get_moves() < 0);
+    }
+
+    SECTION("pouring too far away is refused") {
+        const auto far = bub_to_abs(guy->bub_pos() + tripoint_rel_ms(3, 0, 0));
+        const auto far_unload = string_format(
+            R"({"t":"act","seq":1,"a":"unload","idx":%d,"type":"bottle_plastic","ord":0,"name":%s,"x":%d,"y":%d,"z":%d})",
+            cata_mp::item_index_of(*guy, &bottle),
+            cata_mp::json_quote(cata_mp::item_match_name(bottle)), far.x(), far.y(), far.z());
+        cata_mp::host::perform_action(995, far_unload);
+        CHECK_FALSE(bottle.is_container_empty());
+        CHECK(get_map().i_at(dest_bub).empty());
+    }
+}
+
 TEST_CASE("host drop snapshot clears its weapon within the same turn", "[coop][drop][sync]") {
     clear_all_state();
     const auto cleanup = on_out_of_scope([]() { clear_all_state(); });

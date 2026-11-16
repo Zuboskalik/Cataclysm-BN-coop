@@ -57,7 +57,7 @@ Client → host:
 | --- | --- |
 | `probe` | `ver` (`<protocol>|<build>`, must match exactly), `pw` |
 | `join` | `name`, `ver`, `pw`, `char` (serialized new character) or `null` to continue an existing one |
-| `act` | `seq`, `a` = `move`(`dx`,`dy`) `vmove`(`dz`) `pause` `wait`(`turns`) `open`/`close`/`smash`(`x`,`y`,`z`) `pickup`(`x`,`y`,`z`,`items`=[[ground index,count,type]]) `drop`(`items`=[[item index,count,type]]) `wield`/`wear`/`takeoff`/`eat`(`idx`,`type`) `unwield` `move_mode`(`mode`) `cast`(`id`,`ignore`, target `x`,`y`,`z` if the spell needs one) `bionic`(`idx`,`id`, `style` for the CQB bionic) `mutation`(`id`,`on`) `style`(`style`,`hands_free`) `talk`(`id` of the NPC) |
+| `act` | `seq`, `a` = `move`(`dx`,`dy`) `vmove`(`dz`) `pause` `wait`(`turns`) `open`/`close`/`smash`(`x`,`y`,`z`) `pickup`(`x`,`y`,`z`,`items`=[[ground index,count,type]]) `drop`(`items`=[[item index,count,type]]) `unload`(`idx`,`type`, pour liquids to `x`,`y`,`z`) `wield`/`wear`/`takeoff`/`eat`(`idx`,`type`) `unwield` `move_mode`(`mode`) `cast`(`id`,`ignore`, target `x`,`y`,`z` if the spell needs one) `bionic`(`idx`,`id`, `style` for the CQB bionic) `mutation`(`id`,`on`) `style`(`style`,`hands_free`) `talk`(`id` of the NPC) |
 | `stop_wait`, `chat`(`text`), `need`(`sm`=[[x,y,z]]), `resync`, `quit` | |
 
 Host → client:

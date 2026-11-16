@@ -1809,6 +1809,56 @@ item* find_action_item(npc& guy, const JsonObject& jo, bool& on_ground) {
         jo.get_string("name", ""));
 }
 
+// Unload ('U'): pour liquids at the spot the player picked on their client
+// and move the remaining contents to the character, like the single-player
+// unload does (avatar_functions::unload_item), but without local prompts.
+action_result do_unload(npc& guy, const JsonObject& jo) {
+    bool on_ground = false;
+    item* it = find_action_item(guy, jo, on_ground);
+    if (it == nullptr) {
+        return fail(on_ground ? _("That is no longer there.") : _("You no longer have that."));
+    }
+    if (!it->is_container() && !it->is_bandolier() && !it->type->can_use("holster")) {
+        return fail(string_format(_("You can't unload a %s!"), it->tname()));
+    }
+    if (it->contents.empty()) {
+        return fail(string_format(_("The %s is already empty!"), it->tname()));
+    }
+    if (!it->can_unload_liquid()) {
+        return fail(_("The liquid can't be unloaded in its current state!"));
+    }
+    map& here = get_map();
+    const std::optional<tripoint_bub_ms> pour_to =
+        jo.has_int("x") ? std::optional<tripoint_bub_ms>(read_bub(jo)) : std::nullopt;
+    if (pour_to
+        && (rl_dist(guy.bub_pos(), *pour_to) > 1 || !here.inbounds(*pour_to)
+            || !here.can_put_items_ter_furn(*pour_to))) {
+        return fail(_("You can't pour there!"));
+    }
+    bool changed = false;
+    bool poured = false;
+    it->contents.remove_top_items_with([&](detached_ptr<item>&& contained) {
+        if (contained->made_of(LIQUID)) {
+            if (pour_to) {
+                guy.mod_moves(-100);
+                poured = true;
+                return here.add_item_or_charges(*pour_to, std::move(contained));
+            }
+            return std::move(contained);
+        }
+        item& obj = *contained;
+        contained = guy.i_add_or_drop(std::move(contained));
+        if (!contained) {
+            guy.mod_moves(-guy.item_handling_cost(obj));
+            changed = true;
+        }
+        return std::move(contained);
+    });
+    if (changed) { it->on_contents_changed(); }
+    if (!changed && !poured) { return fail(std::string()); }
+    return action_result{};
+}
+
 // "Eat / drink / consume" (E).  Consumes carried or ground items (including from
 // containers like a canteen on the ground).
 action_result do_eat(npc& guy, const JsonObject& jo) {
@@ -2343,6 +2393,7 @@ action_result execute(peer_t& p, npc& guy, message& m) {
     if (a == "wield" || a == "unwield" || a == "wear" || a == "takeoff" || a == "eat") {
         return do_item_action(guy, a, jo);
     }
+    if (a == "unload") { return do_unload(guy, jo); }
     if (a == "fire") { return do_fire(guy, jo); }
     if (a == "craft") { return do_craft(guy, jo); }
     if (a == "examine") { return do_examine(guy, read_bub(jo)); }
