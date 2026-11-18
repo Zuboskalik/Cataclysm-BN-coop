@@ -27,7 +27,10 @@
 #include "player_helpers.h"
 #include "ranged.h"
 #include "state_helpers.h"
+#include "type_id.h"
 #include "units.h"
+#include "vehicle/veh_type.h"
+#include "vehicle/vehicle.h"
 #include "weather/weather.h"
 
 #include <sstream>
@@ -160,6 +163,84 @@ TEST_CASE("a player who leaves is taken out of the world and comes back", "[coop
     cata_mp::host::handle_closed(902, "test over");
     cata_mp::host_end_of_turn();
     CHECK(proxies_named() == 0);
+}
+
+TEST_CASE("a remote player pulled to the host leaves its vehicle seat", "[coop][vehicle]") {
+    clear_all_state();
+    const auto cleanup = on_out_of_scope([]() { clear_all_state(); });
+    const auto hosting = hosting_scope{};
+    get_avatar().setpos(tripoint_bub_ms{50, 50, 0});
+    const auto seat = tripoint_bub_ms{60, 60, 0};
+    npc& guy = spawn_remote_player(seat);
+    auto& here = get_map();
+    vehicle* veh = here.add_vehicle(vproto_id("car"), seat, 0_degrees, 0, 0);
+    REQUIRE(veh != nullptr);
+    here.board_vehicle(seat, &guy);
+    guy.controlling_vehicle = true;
+    REQUIRE(guy.in_vehicle);
+    REQUIRE_FALSE(veh->boarded_parts().empty());
+
+    // The host walks away and the proxy is teleported back into the bubble.
+    cata_mp::place_npc_near_host(guy);
+
+    CHECK_FALSE(guy.in_vehicle);
+    CHECK_FALSE(guy.controlling_vehicle);
+    CHECK(veh->boarded_parts().empty());
+}
+
+TEST_CASE(
+    "a player who leaves a vehicle frees the seat and returns on foot",
+    "[coop][drop_in][vehicle]") {
+    clear_all_state();
+    const auto cleanup = on_out_of_scope([]() { clear_all_state(); });
+    const auto hosting = hosting_scope{};
+    get_avatar().setpos(tripoint_bub_ms{50, 50, 0});
+    const auto name = std::string("Vehicle Leaver");
+    const auto find_proxy = [&name]() -> npc* { // *NOPAD*
+        for (npc& guy : g->all_npcs()) {
+            if (guy.get_value("coop_player") == name) { return &guy; }
+        }
+        return nullptr;
+    };
+    const auto probe =
+        R"({"t":"probe","pw":"","ver":)" + cata_mp::json_quote(cata_mp::protocol_version_string())
+        + "}";
+    const auto join = [&](const std::string& character) {
+        return R"({"t":"join","name":)" + cata_mp::json_quote(name) + R"(,"char":)" + character
+             + "}";
+    };
+    const auto character = cata_mp::write_json([](JsonOut& jsout) { npc().serialize(jsout); });
+    cata_mp::host::handle_opened(950, "test");
+    cata_mp::host::handle_line(950, probe);
+    cata_mp::host::handle_line(950, join(character));
+    npc* guy = find_proxy();
+    REQUIRE(guy != nullptr);
+
+    auto& here = get_map();
+    const auto seat = guy->bub_pos();
+    vehicle* veh = here.add_vehicle(vproto_id("car"), seat, 0_degrees, 0, 0);
+    REQUIRE(veh != nullptr);
+    here.board_vehicle(seat, guy);
+    guy->controlling_vehicle = true;
+    REQUIRE(guy->in_vehicle);
+
+    // It leaves: the seat must be freed before the character is stored.
+    cata_mp::host::handle_closed(950, "test over");
+    cata_mp::host_end_of_turn();
+    CHECK(find_proxy() == nullptr);
+    CHECK(veh->boarded_parts().empty());
+
+    // It rejoins the same character, on foot rather than in the old seat.
+    cata_mp::host::handle_opened(951, "test");
+    cata_mp::host::handle_line(951, probe);
+    cata_mp::host::handle_line(951, join("null"));
+    npc* back = find_proxy();
+    REQUIRE(back != nullptr);
+    CHECK_FALSE(back->in_vehicle);
+    CHECK_FALSE(back->controlling_vehicle);
+
+    cata_mp::host::handle_closed(951, "test over");
+    cata_mp::host_end_of_turn();
 }
 
 TEST_CASE("three remote players can join at once", "[coop][drop_in]") {

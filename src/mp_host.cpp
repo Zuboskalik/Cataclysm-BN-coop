@@ -259,7 +259,27 @@ std::optional<tripoint_bub_ms> free_spot_near(const tripoint_bub_ms& center, int
     return std::nullopt;
 }
 
+/// Frees any vehicle seat a proxy occupies before it is moved or stored, so
+/// neither the character nor the vehicle keeps a dangling reference to the
+/// other.  A driver left "in control" of a vehicle it is no longer in would
+/// keep that vehicle moving on its own, out of the reality bubble.
+void unboard_proxy(npc& guy) {
+    if (guy.in_vehicle) {
+        for (const wrapped_vehicle& wv : get_map().get_vehicles()) {
+            auto& veh = *wv.v;
+            for (const auto p : veh.boarded_parts()) {
+                if (veh.get_passenger(p) == &guy) {
+                    get_map().unboard_vehicle(vpart_reference(veh, p), &guy);
+                }
+            }
+        }
+        guy.in_vehicle = false;
+    }
+    guy.controlling_vehicle = false;
+}
+
 void place_npc_near_host(npc& guy) {
+    unboard_proxy(guy);
     const tripoint_bub_ms center = get_avatar().bub_pos();
     const std::optional<tripoint_bub_ms> spot = free_spot_near(center, 12);
     guy.setpos(spot ? *spot : center);
@@ -394,10 +414,14 @@ void stash_proxy(const character_id& id) {
     // Keeps the character alive while it is taken out.
     const shared_ptr_fast<npc> guy = omb.find_npc(id);
     if (!guy) { return; }
-    store_player(*guy);
     const bool active = std::ranges::any_of(g->all_npcs(), [&id](const npc& n) {
         return n.getID() == id;
     });
+    // Free any vehicle seat first: the stored character must not remember
+    // being in a vehicle, and the vehicle must not keep a passenger who is
+    // taken out of the world.
+    if (active) { unboard_proxy(*guy); }
+    store_player(*guy);
     if (active) { g->erase_npc(id); }
     omb.remove_npc(id);
     save_stored_players();
@@ -489,6 +513,10 @@ npc* activate_existing_proxy(const std::string& player_name) {
 npc* create_proxy(JsonIn& char_json, const std::string& player_name) {
     shared_ptr_fast<npc> guy = make_shared_fast<npc>();
     guy->deserialize(char_json);
+    // The character arrives on foot next to the host, never in a vehicle; a
+    // stored copy may still remember a vehicle it is no longer in.
+    guy->in_vehicle = false;
+    guy->controlling_vehicle = false;
     guy->setID(g->assign_npc_id(), true);
     guy->set_dimension(get_avatar().get_dimension());
     const tripoint_abs_ms target = get_avatar().abs_pos();
@@ -2922,6 +2950,13 @@ bool host_proxy_turn(npc& guy) {
     if (!host::in_safe_area(guy.bub_pos())) {
         host::place_npc_near_host(guy);
         guy.add_msg_if_player(m_info, _("You catch up with %s."), get_avatar().get_name());
+    }
+    // Heal a character that still remembers a vehicle which is no longer here
+    // (an older save, or a vehicle that drove away): otherwise every step it
+    // takes tries to unboard from an empty tile.
+    if (guy.in_vehicle && !get_map().veh_at(guy.bub_pos())) {
+        guy.in_vehicle = false;
+        guy.controlling_vehicle = false;
     }
     // The player looks around for hidden traps each turn; the game only does
     // that for the avatar.
